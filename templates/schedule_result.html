@@ -7,10 +7,9 @@
     <table>
       <thead>
         <tr>
-          <th>Game</th>
+          <th>Court</th>
           <th>Match</th>
           <th>Team 1 win chance</th>
-          <th>Bye</th>
           <th>Winner</th>
           <th>Score (T1–T2)</th>
         </tr>
@@ -18,11 +17,13 @@
       <tbody>
         {% for e in schedule_entries %}
           {% set i = loop.index0 %}
+          {% if loop.first or e.get('round', 1) != schedule_entries[loop.index0 - 1].get('round', 1) %}
+            <tr><td colspan="5" style="font-weight: 600; background: var(--surface); padding: 0.5rem 0.75rem;">Round {{ e.get('round', 1) }}</td></tr>
+          {% endif %}
           <tr>
-            <td>{{ e.game }}</td>
+            <td>Court {{ e.get('court', 'A') }}</td>
             <td>{{ e.team1[0] }} & {{ e.team1[1] }} <em>vs</em> {{ e.team2[0] }} & {{ e.team2[1] }}</td>
             <td>{{ (e.prob * 100)|int }}%</td>
-            <td>{{ e.get('bye', [])|join(', ') or '—' }}</td>
             <td>
               <input type="hidden" name="team1_0_{{ i }}" value="{{ e.team1[0] }}">
               <input type="hidden" name="team1_1_{{ i }}" value="{{ e.team1[1] }}">
@@ -39,6 +40,9 @@
               <input type="number" name="score_team2_{{ i }}" min="0" max="99" placeholder="9" style="width: 3.5rem;">
             </td>
           </tr>
+          {% if e.get('round_bye') %}
+            <tr><td colspan="5" style="color: var(--muted); font-size: 0.9rem;">Bye: {{ e.round_bye|join(', ') }}</td></tr>
+          {% endif %}
         {% endfor %}
       </tbody>
     </table>

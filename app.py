@@ -156,6 +156,29 @@ def save_published_schedule(date_key, next_wednesday_display, players, schedule_
         json.dump(data, f, indent=2)
 
 
+def add_round_court_and_bye(schedule_entries, players):
+    """
+    Add round, court (A/B), and round_bye to each entry for display.
+    4-7 players: one game per round (Court A only). 8+: two games per round (Court A, Court B).
+    """
+    from collections import defaultdict
+    n = len(players)
+    round_size = 1 if n < 8 else 2
+    for i, e in enumerate(schedule_entries):
+        e["round"] = (i // round_size) + 1
+        e["court"] = "A" if round_size == 1 else ("A" if i % 2 == 0 else "B")
+    by_round = defaultdict(list)
+    for e in schedule_entries:
+        by_round[e["round"]].append(e)
+    for entries in by_round.values():
+        all_bye = set()
+        for e in entries:
+            all_bye.update(e.get("bye", []))
+        if entries:
+            entries[-1]["round_bye"] = sorted(all_bye)
+    return schedule_entries
+
+
 @app.route("/")
 def index():
     rankings = load_rankings()
@@ -188,6 +211,7 @@ def slack_command():
         save_published_schedule=save_published_schedule,
         win_probability=win_probability,
         default_rating=DEFAULT_RATING,
+        add_round_court_and_bye=add_round_court_and_bye,
     )
     return jsonify(response)
 
@@ -202,6 +226,8 @@ def schedule():
     availability_all = load_availability()
     availability = availability_all.get(date_key, {})
     published = load_published_schedule()
+    if published:
+        add_round_court_and_bye(published["schedule_entries"], published["players"])
     return render_template(
         "schedule.html",
         rankings=rankings,
@@ -239,6 +265,22 @@ def schedule_unlock_players():
     else:
         flash("Incorrect password.", "error")
     return redirect(url_for("generate"))
+
+
+@app.route("/schedule/record-results")
+def schedule_record_results():
+    """Show the result-entry form for the published schedule (e.g. after generating from Slack)."""
+    published = load_published_schedule()
+    if not published:
+        flash("No schedule published for this week. Generate a schedule first.", "error")
+        return redirect(url_for("schedule"))
+    add_round_court_and_bye(published["schedule_entries"], published["players"])
+    return render_template(
+        "schedule_result.html",
+        schedule_entries=published["schedule_entries"],
+        players=published["players"],
+        rankings=published["rankings"],
+    )
 
 
 @app.route("/generate", methods=["GET", "POST"])
@@ -306,6 +348,7 @@ def generate():
                     "bye": bye,
                 }
             )
+        add_round_court_and_bye(schedule_entries, players)
         next_wed = get_next_wednesday()
         save_published_schedule(
             next_wed.isoformat(),

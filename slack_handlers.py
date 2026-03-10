@@ -102,7 +102,7 @@ def handle_pb_schedule(player_list, load_availability, get_next_wednesday):
     return {"response_type": "ephemeral", "text": text}
 
 
-def handle_pb_generate(text, schedule_password, load_players_list, load_availability, get_next_wednesday, generate_schedule, format_schedule, save_published_schedule, win_probability, default_rating):
+def handle_pb_generate(text, schedule_password, load_players_list, load_availability, get_next_wednesday, generate_schedule, format_schedule, save_published_schedule, win_probability, default_rating, add_round_court_and_bye):
     """Generate schedule from who's marked in this week. Usage: /pb-generate <password> [number-of-games]"""
     parts = (text or "").strip().split()
     if len(parts) < 1:
@@ -144,6 +144,7 @@ def handle_pb_generate(text, schedule_password, load_players_list, load_availabi
                 "prob": prob,
                 "bye": bye,
             })
+        add_round_court_and_bye(schedule_entries, players_in)
         save_published_schedule(
             date_key,
             next_wed.strftime("%A, %B %d, %Y"),
@@ -152,9 +153,15 @@ def handle_pb_generate(text, schedule_password, load_players_list, load_availabi
             rankings,
         )
         out = [f"*Schedule for {next_wed.strftime('%A, %B %d')}*"]
-        for line in lines:
-            out.append(f"  {line}")
-        out.append("\nRecord results and update rankings from the *web app* (Schedule result page).")
+        current_round = None
+        for e in schedule_entries:
+            if e.get("round") != current_round:
+                current_round = e.get("round")
+                out.append(f"\n*Round {current_round}*")
+            out.append(f"  Court {e.get('court', 'A')}: {e['team1'][0]} & {e['team1'][1]} vs {e['team2'][0]} & {e['team2'][1]}")
+            if e.get("round_bye"):
+                out.append(f"  Bye: {', '.join(e['round_bye'])}")
+        out.append("\nRecord results from the *Schedule* tab → Record results.")
         return {"response_type": "in_channel", "text": "\n".join(out)}
     except ValueError as e:
         return {"response_type": "ephemeral", "text": str(e)}
@@ -193,5 +200,6 @@ def handle_slack_command(command, text, **kwargs):
             kwargs["save_published_schedule"],
             kwargs["win_probability"],
             kwargs["default_rating"],
+            kwargs["add_round_court_and_bye"],
         )
     return {"response_type": "ephemeral", "text": f"Unknown command: {command}. Use `/pb-schedule`, `/pb-in`, `/pb-out`, `/pb-availability`, `/pb-rankings`, `/pb-history`, or `/pb-generate`."}
