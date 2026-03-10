@@ -32,36 +32,34 @@
     </ul>
   {% endif %}
 
-  <h2 style="font-size: 1.1rem;">Generate schedule</h2>
-  <p>Select who is playing this week. You need an even number of players (4 or more). Password required to generate.</p>
-  <form method="post" action="{{ url_for('schedule') }}">
-    <label for="selected_players">Who is playing this week?</label>
-    <select id="selected_players" name="selected_players" multiple size="10" style="max-width: 20rem;">
-      {% for p in player_list %}
-        <option value="{{ p }}">{{ p }}</option>
-      {% endfor %}
-    </select>
-    <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Hold Ctrl (Windows/Linux) or Cmd (Mac) to select multiple names.</p>
-
-    {% if schedule_players_unlocked %}
-      <label for="players_extra">Additional players this week (not on list)</label>
-      <textarea id="players_extra" name="players_extra" rows="3" placeholder="Optional: one per line or comma-separated"></textarea>
-    {% endif %}
-
-    <label for="games">Number of games (optional)</label>
-    <input type="number" id="games" name="games" min="1" max="32" placeholder="e.g. 8">
-    <label for="schedule_password">Schedule password (required to generate)</label>
-    <input type="password" id="schedule_password" name="schedule_password" placeholder="Password" style="max-width: 14rem;">
-    <button type="submit">Generate schedule</button>
-  </form>
-
-  {% if not schedule_players_unlocked %}
-    <p style="margin-top: 1rem; color: var(--muted); font-size: 0.9rem;">To add players not on the list, enter the password:</p>
-    <form method="post" action="{{ url_for('schedule_unlock_players') }}" style="margin-top: 0.5rem;">
-      <input type="password" name="players_extra_password" placeholder="Password" style="max-width: 12rem;">
-      <button type="submit" class="btn-secondary" style="margin-top: 0;">Unlock additional players</button>
-    </form>
+  {% if published_schedule %}
+    <h2 style="font-size: 1.1rem;">This week's published schedule</h2>
+    <p style="color: var(--muted); font-size: 0.9rem;">{{ published_schedule.next_wednesday_display }} — {{ published_schedule.players|join(", ") }}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Game</th>
+          <th>Match</th>
+          <th>Team 1 win chance</th>
+          <th>Bye</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in published_schedule.schedule_entries %}
+          <tr>
+            <td>{{ e.game }}</td>
+            <td>{{ e.team1[0] }} & {{ e.team1[1] }} <em>vs</em> {{ e.team2[0] }} & {{ e.team2[1] }}</td>
+            <td>{{ (e.prob * 100)|int }}%</td>
+            <td>{{ e.get('bye', [])|join(', ') or '—' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p style="margin-top: 0.5rem; color: var(--muted); font-size: 0.9rem;">To record results and update rankings, use the result page after generating, or go to <a href="{{ url_for('rankings') }}">Rankings</a>.</p>
+  {% else %}
+    <p style="color: var(--muted); font-size: 0.9rem;">No schedule published yet for this week. Use the <a href="{{ url_for('generate') }}">Generate</a> tab (password required) to create one.</p>
   {% endif %}
+
   {% if not player_list %}
     <p style="margin-top: 1rem;"><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
   {% endif %}

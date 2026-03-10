@@ -10,6 +10,7 @@
           <th>Game</th>
           <th>Match</th>
           <th>Team 1 win chance</th>
+          <th>Bye</th>
           <th>Winner</th>
           <th>Score (T1–T2)</th>
         </tr>
@@ -21,6 +22,7 @@
             <td>{{ e.game }}</td>
             <td>{{ e.team1[0] }} & {{ e.team1[1] }} <em>vs</em> {{ e.team2[0] }} & {{ e.team2[1] }}</td>
             <td>{{ (e.prob * 100)|int }}%</td>
+            <td>{{ e.get('bye', [])|join(', ') or '—' }}</td>
             <td>
               <input type="hidden" name="team1_0_{{ i }}" value="{{ e.team1[0] }}">
               <input type="hidden" name="team1_1_{{ i }}" value="{{ e.team1[1] }}">
@@ -55,5 +57,5 @@
       {% endfor %}
     </tbody>
   </table>
-  <p><a href="{{ url_for('schedule') }}" class="btn btn-secondary">Generate another schedule</a></p>
+  <p><a href="{{ url_for('generate') }}" class="btn btn-secondary">Generate another schedule</a></p>
 {% endblock %}

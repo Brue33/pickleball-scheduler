@@ -27,6 +27,7 @@ app.secret_key = "pickleball-scheduler-secret-change-in-production"
 PLAYERS_FILE = Path(__file__).resolve().parent / "players.json"
 MATCH_HISTORY_FILE = Path(__file__).resolve().parent / "match_history.json"
 AVAILABILITY_FILE = Path(__file__).resolve().parent / "availability.json"
+PUBLISHED_SCHEDULE_FILE = Path(__file__).resolve().parent / "published_schedule.json"
 PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
@@ -126,6 +127,35 @@ def save_availability(by_date):
         json.dump(by_date, f, indent=2)
 
 
+def load_published_schedule():
+    """Load the published schedule for this week; return None if missing or not this week."""
+    next_wed = get_next_wednesday()
+    date_key = next_wed.isoformat()
+    if not PUBLISHED_SCHEDULE_FILE.exists():
+        return None
+    try:
+        with open(PUBLISHED_SCHEDULE_FILE) as f:
+            data = json.load(f)
+        if data.get("date_key") != date_key:
+            return None
+        return data
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_published_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings):
+    """Save the generated schedule so the Schedule tab can show it (public view)."""
+    data = {
+        "date_key": date_key,
+        "next_wednesday_display": next_wednesday_display,
+        "players": list(players),
+        "schedule_entries": schedule_entries,
+        "rankings": dict(rankings),
+    }
+    with open(PUBLISHED_SCHEDULE_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
 @app.route("/")
 def index():
     rankings = load_rankings()
@@ -155,88 +185,32 @@ def slack_command():
         load_players_list=load_players_list,
         generate_schedule=generate_schedule,
         format_schedule=format_schedule,
+        save_published_schedule=save_published_schedule,
+        win_probability=win_probability,
+        default_rating=DEFAULT_RATING,
     )
     return jsonify(response)
 
 
-@app.route("/schedule", methods=["GET", "POST"])
+@app.route("/schedule", methods=["GET"])
 def schedule():
-    if request.method == "GET":
-        rankings = load_rankings()
-        player_list = load_players_list()
-        next_wed = get_next_wednesday()
-        next_wed_str = next_wed.strftime("%A, %B %d, %Y")
-        date_key = next_wed.isoformat()
-        availability_all = load_availability()
-        availability = availability_all.get(date_key, {})
-        schedule_players_unlocked = session.get("schedule_players_unlocked", False)
-        return render_template(
-            "schedule.html",
-            rankings=rankings,
-            player_list=player_list,
-            next_wednesday=next_wed_str,
-            date_key=date_key,
-            availability=availability,
-            schedule_players_unlocked=schedule_players_unlocked,
-        )
-
-    # POST: generate schedule (requires schedule password)
-    schedule_password = request.form.get("schedule_password", "").strip()
-    if schedule_password != SCHEDULE_PASSWORD:
-        flash("Invalid schedule password. Use the correct password to generate.", "error")
-        return redirect(url_for("schedule"))
-
-    selected = request.form.getlist("selected_players")
-    players_extra = request.form.get("players_extra", "").strip() if session.get("schedule_players_unlocked") else ""
-    games_str = request.form.get("games", "").strip()
-
-    players = [p.strip() for p in selected if p and p.strip()]
-    if players_extra:
-        extra = [p.strip() for p in players_extra.replace(",", "\n").split() if p.strip()]
-        for p in extra:
-            if p and p not in players:
-                players.append(p)
-    players = list(dict.fromkeys(players))
-
-    if not players:
-        flash("Select at least one player from the list, or add names below.", "error")
-        return redirect(url_for("schedule"))
-
-    games = None
-    if games_str:
-        try:
-            games = int(games_str)
-            if games < 1:
-                games = None
-        except ValueError:
-            pass
-
-    try:
-        schedule_list, rankings = generate_schedule(players, games_per_round=games)
-        lines = format_schedule(schedule_list, rankings)
-        schedule_entries = []
-        for i, (team1, team2) in enumerate(schedule_list, 1):
-            r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
-            r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
-            prob = win_probability(r1, r2)
-            schedule_entries.append(
-                {
-                    "game": i,
-                    "team1": list(team1),
-                    "team2": list(team2),
-                    "line": lines[i - 1] if i <= len(lines) else "",
-                    "prob": prob,
-                }
-            )
-        return render_template(
-            "schedule_result.html",
-            schedule_entries=schedule_entries,
-            rankings=rankings,
-            players=players,
-        )
-    except ValueError as e:
-        flash(str(e), "error")
-        return redirect(url_for("schedule"))
+    rankings = load_rankings()
+    player_list = load_players_list()
+    next_wed = get_next_wednesday()
+    next_wed_str = next_wed.strftime("%A, %B %d, %Y")
+    date_key = next_wed.isoformat()
+    availability_all = load_availability()
+    availability = availability_all.get(date_key, {})
+    published = load_published_schedule()
+    return render_template(
+        "schedule.html",
+        rankings=rankings,
+        player_list=player_list,
+        next_wednesday=next_wed_str,
+        date_key=date_key,
+        availability=availability,
+        published_schedule=published,
+    )
 
 
 @app.route("/schedule/availability", methods=["POST"])
@@ -264,7 +238,91 @@ def schedule_unlock_players():
         flash("Additional players section unlocked.", "success")
     else:
         flash("Incorrect password.", "error")
-    return redirect(url_for("schedule"))
+    return redirect(url_for("generate"))
+
+
+@app.route("/generate", methods=["GET", "POST"])
+def generate():
+    """Generate schedule (password protected). Saves as published schedule for Schedule tab."""
+    if request.method == "GET":
+        player_list = load_players_list()
+        next_wed = get_next_wednesday()
+        schedule_players_unlocked = session.get("schedule_players_unlocked", False)
+        return render_template(
+            "generate.html",
+            player_list=player_list,
+            next_wednesday=next_wed.strftime("%A, %B %d, %Y"),
+            schedule_players_unlocked=schedule_players_unlocked,
+        )
+
+    # POST: generate schedule (requires schedule password)
+    schedule_password = request.form.get("schedule_password", "").strip()
+    if schedule_password != SCHEDULE_PASSWORD:
+        flash("Invalid schedule password. Use the correct password to generate.", "error")
+        return redirect(url_for("generate"))
+
+    selected = request.form.getlist("selected_players")
+    players_extra = request.form.get("players_extra", "").strip() if session.get("schedule_players_unlocked") else ""
+    games_str = request.form.get("games", "").strip()
+
+    players = [p.strip() for p in selected if p and p.strip()]
+    if players_extra:
+        extra = [p.strip() for p in players_extra.replace(",", "\n").split() if p.strip()]
+        for p in extra:
+            if p and p not in players:
+                players.append(p)
+    players = list(dict.fromkeys(players))
+
+    if not players:
+        flash("Select at least one player from the list, or add names below.", "error")
+        return redirect(url_for("generate"))
+
+    games = None
+    if games_str:
+        try:
+            games = int(games_str)
+            if games < 1:
+                games = None
+        except ValueError:
+            pass
+
+    try:
+        schedule_list, rankings = generate_schedule(players, games_per_round=games)
+        lines = format_schedule(schedule_list, rankings, players=players)
+        schedule_entries = []
+        for i, (team1, team2) in enumerate(schedule_list, 1):
+            r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
+            r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
+            prob = win_probability(r1, r2)
+            playing = set(team1) | set(team2)
+            bye = sorted(set(players) - playing)
+            schedule_entries.append(
+                {
+                    "game": i,
+                    "team1": list(team1),
+                    "team2": list(team2),
+                    "line": lines[i - 1] if i <= len(lines) else "",
+                    "prob": prob,
+                    "bye": bye,
+                }
+            )
+        next_wed = get_next_wednesday()
+        save_published_schedule(
+            next_wed.isoformat(),
+            next_wed.strftime("%A, %B %d, %Y"),
+            players,
+            schedule_entries,
+            rankings,
+        )
+        return render_template(
+            "schedule_result.html",
+            schedule_entries=schedule_entries,
+            rankings=rankings,
+            players=players,
+        )
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("generate"))
 
 
 @app.route("/schedule-results", methods=["POST"])

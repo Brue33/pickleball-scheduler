@@ -123,15 +123,16 @@ def update_rankings_for_match(rankings, team1, team2, winner, score_team1=None, 
 
 def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
     """
-    players: list of player names (must be even, 4+).
+    players: list of player names (4 or more; odd allowed — byes used as needed).
     games_per_round: number of games to generate (default: enough so each player plays every round).
     max_with: max times same partner in this schedule.
     max_against: max times same opponent in this schedule.
     Returns list of (team1, team2) where each team is (p1, p2).
+    With 2 courts, max 8 players per round; extra players get bye for that game.
     """
     n = len(players)
-    if n < 4 or n % 2 != 0:
-        raise ValueError("Need an even number of players (4 or more).")
+    if n < 4:
+        raise ValueError("Need at least 4 players.")
     history = load_history()
     rankings = load_rankings()
     for p in players:
@@ -145,6 +146,7 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
     scheduled = []
     used_opponent = defaultdict(lambda: defaultdict(int))
     games_played = defaultdict(int)
+    bye_count = defaultdict(int)
 
     def score_pairing(team1, team2):
         p1, p2 = team1
@@ -160,6 +162,11 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
         target = len(scheduled) * 4 // n + 1
         for p in team1 + team2:
             penalty += max(0, games_played[p] - target) * 80
+        # Prefer giving bye to players who have had fewer byes
+        playing = set(team1) | set(team2)
+        bye_players = [p for p in players if p not in playing]
+        for p in bye_players:
+            penalty += bye_count[p] * 60
         return penalty
 
     def add_pairing(team1, team2):
@@ -173,6 +180,10 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
                 used_opponent[a][b] += 1
         for p in team1 + team2:
             games_played[p] += 1
+        playing = set(team1) | set(team2)
+        for p in players:
+            if p not in playing:
+                bye_count[p] += 1
 
     available = list(players)
     from random import shuffle
@@ -207,16 +218,23 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
     return scheduled, rankings
 
 
-def format_schedule(schedule, rankings):
+def format_schedule(schedule, rankings, players=None):
+    """Format schedule as lines. If players is given, append bye for each game when applicable."""
     lines = []
     for i, (team1, team2) in enumerate(schedule, 1):
         r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
         r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
         prob = win_probability(r1, r2)
-        lines.append(
+        line = (
             f"Game {i}: {team1[0]} & {team1[1]} vs {team2[0]} & {team2[1]}  "
             f"(Team 1 win chance: {prob:.0%})"
         )
+        if players is not None:
+            playing = set(team1) | set(team2)
+            bye = sorted(set(players) - playing)
+            if bye:
+                line += f"  — Bye: {', '.join(bye)}"
+        lines.append(line)
     return lines
 
 
@@ -231,7 +249,7 @@ def main():
     p_schedule.add_argument(
         "players",
         nargs="+",
-        help="Space-separated list of players (even number, 4+)",
+        help="Space-separated list of players (4+; odd allowed, byes used)",
     )
     p_schedule.add_argument(
         "--games",
@@ -273,7 +291,7 @@ def main():
         except ValueError as e:
             print(e, file=sys.stderr)
             sys.exit(1)
-        for line in format_schedule(schedule, rankings):
+        for line in format_schedule(schedule, rankings, players=args.players):
             print(line)
         print()
         print("Current rankings (for reference):")

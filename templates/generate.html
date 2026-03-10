@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Generate schedule{% endblock %}
+{% block content %}
+  <h1>Generate schedule</h1>
+  <p style="color: var(--muted); font-size: 0.9rem;">For {{ next_wednesday }}. Select who is playing (4+ players; byes used when odd). Password required.</p>
+
+  {% if not player_list %}
+    <p><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
+  {% else %}
+    <form method="post" action="{{ url_for('generate') }}">
+      <label for="selected_players">Who is playing this week?</label>
+      <select id="selected_players" name="selected_players" multiple size="10" style="max-width: 20rem;">
+        {% for p in player_list %}
+          <option value="{{ p }}">{{ p }}</option>
+        {% endfor %}
+      </select>
+      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Hold Ctrl (Windows/Linux) or Cmd (Mac) to select multiple names.</p>
+
+      {% if schedule_players_unlocked %}
+        <label for="players_extra">Additional players this week (not on list)</label>
+        <textarea id="players_extra" name="players_extra" rows="3" placeholder="Optional: one per line or comma-separated"></textarea>
+      {% endif %}
+
+      <label for="games">Number of games (optional)</label>
+      <input type="number" id="games" name="games" min="1" max="32" placeholder="e.g. 8">
+      <label for="schedule_password">Schedule password (required to generate)</label>
+      <input type="password" id="schedule_password" name="schedule_password" placeholder="Password" style="max-width: 14rem;">
+      <button type="submit">Generate schedule</button>
+    </form>
+
+    {% if not schedule_players_unlocked %}
+      <p style="margin-top: 1rem; color: var(--muted); font-size: 0.9rem;">To add players not on the list, enter the players password:</p>
+      <form method="post" action="{{ url_for('schedule_unlock_players') }}" style="margin-top: 0.5rem;">
+        <input type="password" name="players_extra_password" placeholder="Password" style="max-width: 12rem;">
+        <button type="submit" class="btn-secondary" style="margin-top: 0;">Unlock additional players</button>
+      </form>
+    {% endif %}
+  {% endif %}
+{% endblock %}
