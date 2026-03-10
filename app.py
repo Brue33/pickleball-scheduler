@@ -4,10 +4,13 @@ Run with: python app.py  or  flask --app app run
 """
 
 import json
+import hmac
+import hashlib
+import os
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from scheduler import (
     generate_schedule,
     load_rankings,
@@ -23,7 +26,22 @@ app.secret_key = "pickleball-scheduler-secret-change-in-production"
 
 PLAYERS_FILE = Path(__file__).resolve().parent / "players.json"
 MATCH_HISTORY_FILE = Path(__file__).resolve().parent / "match_history.json"
+AVAILABILITY_FILE = Path(__file__).resolve().parent / "availability.json"
 PLAYERS_PASSWORD = "PBPlayers26"
+SCHEDULE_PASSWORD = "PBGames26"
+SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
+
+
+def verify_slack_signature(body_bytes, timestamp, signature_header):
+    if not SLACK_SIGNING_SECRET:
+        return True
+    if not signature_header or not body_bytes or not timestamp:
+        return False
+    if not signature_header.startswith("v0="):
+        return False
+    sig_basestring = f"v0:{timestamp}:".encode() + body_bytes
+    expected = "v0=" + hmac.new(SLACK_SIGNING_SECRET.encode(), sig_basestring, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature_header)
 
 
 def load_players_list():
@@ -83,10 +101,62 @@ def append_match(team1, team2, winner, score_team1=None, score_team2=None):
         json.dump({"matches": matches}, f, indent=2)
 
 
+def get_next_wednesday():
+    """Return the next upcoming Wednesday (or today if today is Wednesday)."""
+    today = date.today()
+    days_ahead = (2 - today.weekday() + 7) % 7
+    if days_ahead == 0:
+        return today
+    return today + timedelta(days=days_ahead)
+
+
+def load_availability():
+    """Load availability by date: { 'YYYY-MM-DD': { 'PlayerName': 'in'|'out' } }."""
+    if not AVAILABILITY_FILE.exists():
+        return {}
+    try:
+        with open(AVAILABILITY_FILE) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_availability(by_date):
+    with open(AVAILABILITY_FILE, "w") as f:
+        json.dump(by_date, f, indent=2)
+
+
 @app.route("/")
 def index():
     rankings = load_rankings()
     return render_template("index.html", rankings=rankings)
+
+
+@app.route("/slack/command", methods=["POST"])
+def slack_command():
+    body = request.get_data(cache=True)
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+    if not verify_slack_signature(body, timestamp, signature):
+        return jsonify({"text": "Invalid request signature."}), 401
+    command = request.form.get("command", "")
+    text = request.form.get("text", "")
+    from slack_handlers import handle_slack_command
+    response = handle_slack_command(
+        command=command,
+        text=text,
+        player_list=load_players_list(),
+        load_rankings=load_rankings,
+        load_match_history=load_match_history,
+        load_availability=load_availability,
+        save_availability=save_availability,
+        get_next_wednesday=get_next_wednesday,
+        schedule_password=SCHEDULE_PASSWORD,
+        load_players_list=load_players_list,
+        generate_schedule=generate_schedule,
+        format_schedule=format_schedule,
+    )
+    return jsonify(response)
 
 
 @app.route("/schedule", methods=["GET", "POST"])
@@ -94,11 +164,30 @@ def schedule():
     if request.method == "GET":
         rankings = load_rankings()
         player_list = load_players_list()
-        return render_template("schedule.html", rankings=rankings, player_list=player_list)
+        next_wed = get_next_wednesday()
+        next_wed_str = next_wed.strftime("%A, %B %d, %Y")
+        date_key = next_wed.isoformat()
+        availability_all = load_availability()
+        availability = availability_all.get(date_key, {})
+        schedule_players_unlocked = session.get("schedule_players_unlocked", False)
+        return render_template(
+            "schedule.html",
+            rankings=rankings,
+            player_list=player_list,
+            next_wednesday=next_wed_str,
+            date_key=date_key,
+            availability=availability,
+            schedule_players_unlocked=schedule_players_unlocked,
+        )
 
-    # POST: generate schedule
+    # POST: generate schedule (requires schedule password)
+    schedule_password = request.form.get("schedule_password", "").strip()
+    if schedule_password != SCHEDULE_PASSWORD:
+        flash("Invalid schedule password. Use the correct password to generate.", "error")
+        return redirect(url_for("schedule"))
+
     selected = request.form.getlist("selected_players")
-    players_extra = request.form.get("players_extra", "").strip()
+    players_extra = request.form.get("players_extra", "").strip() if session.get("schedule_players_unlocked") else ""
     games_str = request.form.get("games", "").strip()
 
     players = [p.strip() for p in selected if p and p.strip()]
@@ -148,6 +237,34 @@ def schedule():
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("schedule"))
+
+
+@app.route("/schedule/availability", methods=["POST"])
+def schedule_availability():
+    player_name = request.form.get("availability_player", "").strip()
+    status = request.form.get("availability_status", "").strip().lower()
+    if not player_name or status not in ("in", "out"):
+        flash("Select your name and In or Out.", "error")
+        return redirect(url_for("schedule"))
+    next_wed = get_next_wednesday()
+    date_key = next_wed.isoformat()
+    availability_all = load_availability()
+    if date_key not in availability_all:
+        availability_all[date_key] = {}
+    availability_all[date_key][player_name] = status
+    save_availability(availability_all)
+    flash(f"Marked {player_name} as {status} for next Wednesday.", "success")
+    return redirect(url_for("schedule"))
+
+
+@app.route("/schedule/unlock-players", methods=["POST"])
+def schedule_unlock_players():
+    if request.form.get("players_extra_password", "").strip() == PLAYERS_PASSWORD:
+        session["schedule_players_unlocked"] = True
+        flash("Additional players section unlocked.", "success")
+    else:
+        flash("Incorrect password.", "error")
+    return redirect(url_for("schedule"))
 
 
 @app.route("/schedule-results", methods=["POST"])
@@ -232,7 +349,7 @@ def players_reset():
     save_rankings(reset_rankings)
     with open(MATCH_HISTORY_FILE, "w") as f:
         json.dump({"matches": []}, f, indent=2)
-    flash("All rankings reset to 1000 and past games cleared.", "success")
+    flash("All rankings reset to 1300 and past games cleared.", "success")
     return redirect(url_for("players"))
 
 

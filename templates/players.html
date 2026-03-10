@@ -4,7 +4,7 @@
   <h1>Player list</h1>
   <p>Add or remove names. This list is used when selecting who is playing each week on the Schedule page.</p>
   <p><a href="{{ url_for('players_logout') }}" class="btn-secondary" style="margin-top: 0;">Log out</a></p>
-  <form method="post" action="{{ url_for('players_reset') }}" style="margin-bottom: 1.5rem;" onsubmit="return confirm('Reset all rankings to 1000 and clear all past games? This cannot be undone.');">
+  <form method="post" action="{{ url_for('players_reset') }}" style="margin-bottom: 1.5rem;" onsubmit="return confirm('Reset all rankings to 1300 and clear all past games? This cannot be undone.');">
     <button type="submit" class="btn-secondary" style="background: var(--error);">Reset rankings &amp; clear past games</button>
   </form>
   <form method="post" action="{{ url_for('players') }}" style="margin-bottom: 1.5rem;">
@@ -32,7 +32,7 @@
               <td>{{ p }}</td>
               <td>
                 <input type="hidden" name="player_{{ loop.index0 }}" value="{{ p }}">
-                <input type="number" name="rating_{{ loop.index0 }}" value="{{ rankings.get(p, 1000) }}" min="0" max="3000" step="50" style="width: 5rem;">
+                <input type="number" name="rating_{{ loop.index0 }}" value="{{ rankings.get(p, 1300) }}" min="0" max="3000" step="50" style="width: 5rem;">
               </td>
             </tr>
           {% endfor %}

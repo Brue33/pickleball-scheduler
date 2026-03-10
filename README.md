@@ -6,7 +6,7 @@ Weekly doubles schedule with **individual rankings**, **win probability** per ma
 
 - **Schedule**: You give a list of players; it generates multiple games with rotating partners and avoids repeating the same partner/opponent too often.
 - **Win chance**: Each game shows "Team 1 win chance: X%" from combined Elo ratings (teammate ratings summed vs opposing team).
-- **Rankings**: Stored in `rankings.json`. New players start at 1000. After each match you report the winner; ratings update (Elo, K=32).
+- **Rankings**: Stored in `rankings.json`. New players start at 1300. After each match you report the winner; ratings update (Elo, K=32).
 
 ## Quick start
 
@@ -31,6 +31,14 @@ cd pickleball_scheduler
 python scheduler.py --help
 ```
 
+### Slack (in addition to the web app)
+
+Run the scheduler from Slack with slash commands. Same data as the web app.
+
+**Setup:** Create an app at [api.slack.com/apps](https://api.slack.com/apps). Add Slash Commands `/pb-in`, `/pb-out`, `/pb-availability`, `/pb-rankings`, `/pb-history`, `/pb-schedule`, `/pb-generate` — all with Request URL `https://YOUR_DOMAIN/slack/command`. Set env var `SLACK_SIGNING_SECRET` (Signing Secret from the app). Deploy Flask so Slack can POST to `/slack/command`.
+
+**Commands:** `/pb-in YourName`, `/pb-out YourName`, `/pb-availability`, `/pb-schedule`, `/pb-generate <password> P1 P2 P3 P4 ...`, `/pb-rankings`, `/pb-history [N]`. Record results from the web app.
+
 ## Weekly workflow
 
 ### 1. Generate the schedule
@@ -54,8 +62,8 @@ Game 1: Alice & Bob vs Carol & Dave  (Team 1 win chance: 50%)
 Game 2: Eve & Frank vs Grace & Henry  (Team 1 win chance: 50%)
 ...
 Current rankings (for reference):
-  Alice: 1000
-  Bob: 1000
+  Alice: 1300
+  Bob: 1300
   ...
 ```
 
@@ -114,7 +122,8 @@ python scheduler.py reset-history
 
 ## Files
 
-- `app.py` – Flask web app (run with `python app.py`).
+- `app.py` – Flask web app (run with `python app.py`) and Slack endpoint `/slack/command`.
+- `slack_handlers.py` – Slack slash command handlers.
 - `scheduler.py` – Core logic and CLI.
 - `templates/` – HTML pages for the web interface.
 - `rankings.json` – Created automatically; stores each player’s rating.

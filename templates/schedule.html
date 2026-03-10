@@ -1,23 +1,68 @@
 {% extends "base.html" %}
-{% block title %}Generate Schedule{% endblock %}
+{% block title %}Schedule{% endblock %}
 {% block content %}
-  <h1>Generate Schedule</h1>
-  <p>Select who is playing this week from your player list. You need an even number of players (4 or more).</p>
+  <h1>Schedule</h1>
+
+  <h2 style="font-size: 1.1rem; margin-top: 1.25rem;">Games on {{ next_wednesday }}</h2>
+  <p style="color: var(--muted); font-size: 0.9rem;">Mark yourself in or out for next Wednesday.</p>
+  <form method="post" action="{{ url_for('schedule_availability') }}" style="margin-bottom: 1rem;">
+    <label for="availability_player">I am</label>
+    <select id="availability_player" name="availability_player" style="max-width: 14rem;">
+      <option value="">— Select name —</option>
+      {% for p in player_list %}
+        <option value="{{ p }}">{{ p }}</option>
+      {% endfor %}
+    </select>
+    <label for="availability_status">I'm</label>
+    <select id="availability_status" name="availability_status" style="max-width: 8rem;">
+      <option value="">—</option>
+      <option value="in">In</option>
+      <option value="out">Out</option>
+    </select>
+    <button type="submit" style="margin-top: 0;">Save</button>
+  </form>
+  {% if availability or player_list %}
+    <p style="color: var(--muted); font-size: 0.9rem;"><strong>Who's in/out:</strong></p>
+    <ul style="list-style: none; padding: 0; margin-bottom: 1.5rem;">
+      {% for p in player_list %}
+        <li style="margin-bottom: 0.25rem;">
+          {{ p }} — {% if availability.get(p) == 'in' %}<span style="color: var(--success);">In</span>{% elif availability.get(p) == 'out' %}<span style="color: var(--error);">Out</span>{% else %}<span style="color: var(--muted);">not set</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <h2 style="font-size: 1.1rem;">Generate schedule</h2>
+  <p>Select who is playing this week. You need an even number of players (4 or more). Password required to generate.</p>
   <form method="post" action="{{ url_for('schedule') }}">
     <label for="selected_players">Who is playing this week?</label>
-    <select id="selected_players" name="selected_players" multiple size="12" style="max-width: 20rem;">
+    <select id="selected_players" name="selected_players" multiple size="10" style="max-width: 20rem;">
       {% for p in player_list %}
         <option value="{{ p }}">{{ p }}</option>
       {% endfor %}
     </select>
     <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Hold Ctrl (Windows/Linux) or Cmd (Mac) to select multiple names.</p>
-    <label for="players_extra">Additional players this week (not on list — one per line or comma-separated)</label>
-    <textarea id="players_extra" name="players_extra" rows="3" placeholder="Optional: add names not on your list"></textarea>
-    <label for="games">Number of games (optional; default is about one per player)</label>
+
+    {% if schedule_players_unlocked %}
+      <label for="players_extra">Additional players this week (not on list)</label>
+      <textarea id="players_extra" name="players_extra" rows="3" placeholder="Optional: one per line or comma-separated"></textarea>
+    {% endif %}
+
+    <label for="games">Number of games (optional)</label>
     <input type="number" id="games" name="games" min="1" max="32" placeholder="e.g. 8">
+    <label for="schedule_password">Schedule password (required to generate)</label>
+    <input type="password" id="schedule_password" name="schedule_password" placeholder="Password" style="max-width: 14rem;">
     <button type="submit">Generate schedule</button>
   </form>
+
+  {% if not schedule_players_unlocked %}
+    <p style="margin-top: 1rem; color: var(--muted); font-size: 0.9rem;">To add players not on the list, enter the password:</p>
+    <form method="post" action="{{ url_for('schedule_unlock_players') }}" style="margin-top: 0.5rem;">
+      <input type="password" name="players_extra_password" placeholder="Password" style="max-width: 12rem;">
+      <button type="submit" class="btn-secondary" style="margin-top: 0;">Unlock additional players</button>
+    </form>
+  {% endif %}
   {% if not player_list %}
-    <p style="margin-top: 1rem;"><a href="{{ url_for('players') }}">Add players to your list</a> first, or add names in the “Additional players” box above.</p>
+    <p style="margin-top: 1rem;"><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
   {% endif %}
 {% endblock %}

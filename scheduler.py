@@ -12,7 +12,7 @@ from pathlib import Path
 from itertools import combinations
 from collections import defaultdict
 
-DEFAULT_RATING = 1000
+DEFAULT_RATING = 1300
 K_FACTOR = 32
 RANKINGS_FILE = Path(__file__).parent / "rankings.json"
 HISTORY_FILE = Path(__file__).parent / "play_history.json"
