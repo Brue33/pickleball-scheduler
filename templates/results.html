@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Record Results{% endblock %}
+{% block content %}
+  <h1>Record match results</h1>
+  <p>Enter the four players and who won. <strong>Team 1</strong> = first two players, <strong>Team 2</strong> = second two. Winner: 1 = Team 1 won, 2 = Team 2 won.</p>
+  <form method="post" action="{{ url_for('results') }}">
+    <label for="game_single">Players (Team 1 player 1, Team 1 player 2, Team 2 player 1, Team 2 player 2)</label>
+    <input type="text" id="game_single" name="game_single" placeholder="Alice, Bob, Carol, Dave">
+    <label for="winner_single">Winner</label>
+    <select id="winner_single" name="winner_single">
+      <option value="">— Select —</option>
+      <option value="1">Team 1 won</option>
+      <option value="2">Team 2 won</option>
+    </select>
+    <button type="submit">Record result</button>
+  </form>
+  <p style="margin-top: 1.5rem; color: var(--muted);">You can record one match at a time above. After submitting, rankings will update and you’ll see the new list on the Rankings page.</p>
+{% endblock %}

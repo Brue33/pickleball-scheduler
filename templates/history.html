@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Past games{% endblock %}
+{% block content %}
+  <h1>Past games</h1>
+  <p>All recorded match outcomes (newest first).</p>
+  {% if matches %}
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Team 1</th>
+          <th>Team 2</th>
+          <th>Score</th>
+          <th>Winner</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in matches %}
+          <tr>
+            <td>{{ m.date[:10] if m.date else "—" }}</td>
+            <td>{{ m.team1[0] }} & {{ m.team1[1] }}</td>
+            <td>{{ m.team2[0] }} & {{ m.team2[1] }}</td>
+            <td>{% if 'score_team1' in m and 'score_team2' in m %}{{ m.score_team1 }}–{{ m.score_team2 }}{% else %}—{% endif %}</td>
+            <td>{% if m.winner == 1 %}Team 1{% else %}Team 2{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No matches recorded yet. Record results from the <a href="{{ url_for('schedule') }}">Schedule</a> page after playing games.</p>
+  {% endif %}
+{% endblock %}

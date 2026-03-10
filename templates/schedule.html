@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Generate Schedule{% endblock %}
+{% block content %}
+  <h1>Generate Schedule</h1>
+  <p>Select who is playing this week from your player list. You need an even number of players (4 or more).</p>
+  <form method="post" action="{{ url_for('schedule') }}">
+    <label for="selected_players">Who is playing this week?</label>
+    <select id="selected_players" name="selected_players" multiple size="12" style="max-width: 20rem;">
+      {% for p in player_list %}
+        <option value="{{ p }}">{{ p }}</option>
+      {% endfor %}
+    </select>
+    <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Hold Ctrl (Windows/Linux) or Cmd (Mac) to select multiple names.</p>
+    <label for="players_extra">Additional players this week (not on list — one per line or comma-separated)</label>
+    <textarea id="players_extra" name="players_extra" rows="3" placeholder="Optional: add names not on your list"></textarea>
+    <label for="games">Number of games (optional; default is about one per player)</label>
+    <input type="number" id="games" name="games" min="1" max="32" placeholder="e.g. 8">
+    <button type="submit">Generate schedule</button>
+  </form>
+  {% if not player_list %}
+    <p style="margin-top: 1rem;"><a href="{{ url_for('players') }}">Add players to your list</a> first, or add names in the “Additional players” box above.</p>
+  {% endif %}
+{% endblock %}

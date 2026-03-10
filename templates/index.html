@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Pickleball Scheduler — Home{% endblock %}
+{% block content %}
+  <h1>Pickleball Doubles Scheduler</h1>
+  <p>Generate weekly schedules with rotating partners, see win chances from ratings, and update rankings after each match.</p>
+  <ul>
+    <li><a href="{{ url_for('schedule') }}">Schedule</a> — Select who’s playing and generate this week’s games.</li>
+    <li><a href="{{ url_for('players') }}">Players</a> — Manage your player list (password protected).</li>
+    <li><a href="{{ url_for('rankings') }}">Rankings</a> — View current ratings (Elo-style).</li>
+    <li><a href="{{ url_for('history') }}">Past games</a> — Review all finished match outcomes.</li>
+  </ul>
+  {% if rankings %}
+    <p><strong>Current players with ratings:</strong> {{ rankings|length }}</p>
+  {% else %}
+    <p>No rankings yet. Generate a schedule and record some results to get started.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('reset_history') }}" style="margin-top: 1.5rem;" onsubmit="return confirm('Reset partner/opponent history? Rankings will not change.');">
+    <button type="submit" class="btn btn-secondary">Reset partner history (new season)</button>
+  </form>
+{% endblock %}

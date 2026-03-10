@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Manage players{% endblock %}
+{% block content %}
+  <h1>Player list</h1>
+  <p>Add or remove names. This list is used when selecting who is playing each week on the Schedule page.</p>
+  <p><a href="{{ url_for('players_logout') }}" class="btn-secondary" style="margin-top: 0;">Log out</a></p>
+  <form method="post" action="{{ url_for('players_reset') }}" style="margin-bottom: 1.5rem;" onsubmit="return confirm('Reset all rankings to 1000 and clear all past games? This cannot be undone.');">
+    <button type="submit" class="btn-secondary" style="background: var(--error);">Reset rankings &amp; clear past games</button>
+  </form>
+  <form method="post" action="{{ url_for('players') }}" style="margin-bottom: 1.5rem;">
+    <label for="add_name">Add player</label>
+    <input type="text" id="add_name" name="add_name" placeholder="Name" style="max-width: 12rem; display: inline-block; margin-right: 0.5rem;">
+    <button type="submit" style="margin-top: 0;">Add</button>
+  </form>
+  {% if player_list %}
+    <p><strong>Current list ({{ player_list|length }}):</strong></p>
+    <div style="background: var(--surface); padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; max-width: 28rem;">
+      <p style="margin: 0 0 0.5rem 0; color: var(--muted); font-size: 0.9rem;"><strong>Skill level → starting Elo</strong></p>
+      <p style="margin: 0; font-size: 0.9rem;">
+        Below 2.0 → 1000 &nbsp;|&nbsp; 2.0 → 1200 &nbsp;|&nbsp; 2.5 → 1300 &nbsp;|&nbsp; 3.0 → 1400<br>
+        3.5 → 1500 &nbsp;|&nbsp; 4.0 → 1600 &nbsp;|&nbsp; 4.5 → 1700 &nbsp;|&nbsp; Above 5.0 → 2000
+      </p>
+    </div>
+    <form method="post" action="{{ url_for('players_ratings') }}" style="margin-bottom: 1rem;">
+      <table style="max-width: 28rem;">
+        <thead>
+          <tr><th>Player</th><th>Elo</th></tr>
+        </thead>
+        <tbody>
+          {% for p in player_list %}
+            <tr>
+              <td>{{ p }}</td>
+              <td>
+                <input type="hidden" name="player_{{ loop.index0 }}" value="{{ p }}">
+                <input type="number" name="rating_{{ loop.index0 }}" value="{{ rankings.get(p, 1000) }}" min="0" max="3000" step="50" style="width: 5rem;">
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit" style="margin-top: 0.5rem;">Save ratings</button>
+    </form>
+    <p style="margin-top: 1rem;"><strong>Remove player:</strong></p>
+    <ul style="list-style: none; padding: 0;">
+      {% for p in player_list %}
+        <li style="margin-bottom: 0.5rem;">
+          <form method="post" action="{{ url_for('players') }}" style="display: inline;">
+            <input type="hidden" name="remove_name" value="{{ p }}">
+            <span style="margin-right: 0.5rem;">{{ p }}</span>
+            <button type="submit" class="btn-secondary" style="margin: 0; padding: 0.2rem 0.5rem; font-size: 0.85rem;">Remove</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No players yet. Add names above. If you already have rankings, you can go to Schedule and the list will start from existing players.</p>
+  {% endif %}
+{% endblock %}

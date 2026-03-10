@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Pickleball Scheduler{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --success: #3fb950;
+      --error: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 1rem 1.5rem;
+      line-height: 1.5;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    nav {
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--surface);
+    }
+    nav a { margin-right: 1rem; }
+    .flash { padding: 0.5rem 0.75rem; margin-bottom: 1rem; border-radius: 6px; }
+    .flash.success { background: rgba(63, 185, 80, 0.2); color: var(--success); }
+    .flash.error { background: rgba(248, 81, 73, 0.2); color: var(--error); }
+    h1 { font-size: 1.5rem; margin-top: 0; }
+    form label { display: block; margin-top: 0.75rem; color: var(--muted); font-size: 0.9rem; }
+    input[type="text"], input[type="number"], input[type="password"], select, textarea {
+      width: 100%;
+      max-width: 24rem;
+      padding: 0.5rem 0.75rem;
+      margin-top: 0.25rem;
+      background: var(--surface);
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 1rem;
+    }
+    button, .btn {
+      display: inline-block;
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    button:hover, .btn:hover { opacity: 0.9; }
+    .btn-secondary { background: var(--surface); color: var(--text); }
+    table { border-collapse: collapse; width: 100%; max-width: 32rem; }
+    th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--surface); }
+    th { color: var(--muted); font-weight: 600; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav>
+    <a href="{{ url_for('index') }}">Home</a>
+    <a href="{{ url_for('schedule') }}">Schedule</a>
+    <a href="{{ url_for('players') }}">Players</a>
+    <a href="{{ url_for('rankings') }}">Rankings</a>
+    <a href="{{ url_for('history') }}">Past games</a>
+  </nav>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, msg in messages %}
+        <div class="flash {{ category }}">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</body>
+</html>

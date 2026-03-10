@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Schedule — {{ players|length }} players{% endblock %}
+{% block content %}
+  <h1>This week’s schedule</h1>
+  <p><strong>Players:</strong> {{ players|join(", ") }}</p>
+  <form method="post" action="{{ url_for('schedule_results') }}">
+    <table>
+      <thead>
+        <tr>
+          <th>Game</th>
+          <th>Match</th>
+          <th>Team 1 win chance</th>
+          <th>Winner</th>
+          <th>Score (T1–T2)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in schedule_entries %}
+          {% set i = loop.index0 %}
+          <tr>
+            <td>{{ e.game }}</td>
+            <td>{{ e.team1[0] }} & {{ e.team1[1] }} <em>vs</em> {{ e.team2[0] }} & {{ e.team2[1] }}</td>
+            <td>{{ (e.prob * 100)|int }}%</td>
+            <td>
+              <input type="hidden" name="team1_0_{{ i }}" value="{{ e.team1[0] }}">
+              <input type="hidden" name="team1_1_{{ i }}" value="{{ e.team1[1] }}">
+              <input type="hidden" name="team2_0_{{ i }}" value="{{ e.team2[0] }}">
+              <input type="hidden" name="team2_1_{{ i }}" value="{{ e.team2[1] }}">
+              <select name="winner_{{ i }}" style="max-width: 8rem;">
+                <option value="">—</option>
+                <option value="1">Team 1</option>
+                <option value="2">Team 2</option>
+              </select>
+            </td>
+            <td>
+              <input type="number" name="score_team1_{{ i }}" min="0" max="99" placeholder="11" style="width: 3.5rem;"> –
+              <input type="number" name="score_team2_{{ i }}" min="0" max="99" placeholder="9" style="width: 3.5rem;">
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit">Save results</button>
+  </form>
+  <p style="margin-top: 1rem;"><strong>Current rankings (this week’s players):</strong></p>
+  <table>
+    <thead>
+      <tr><th>Player</th><th>Rating</th></tr>
+    </thead>
+    <tbody>
+      {% for p in players %}
+        {% if p in rankings %}
+          <tr><td>{{ p }}</td><td>{{ rankings[p] }}</td></tr>
+        {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  <p><a href="{{ url_for('schedule') }}" class="btn btn-secondary">Generate another schedule</a></p>
+{% endblock %}

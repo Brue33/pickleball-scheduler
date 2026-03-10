@@ -1,0 +1,350 @@
+"""
+Flask web app for the pickleball doubles scheduler.
+Run with: python app.py  or  flask --app app run
+"""
+
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+from scheduler import (
+    generate_schedule,
+    load_rankings,
+    save_rankings,
+    update_rankings_for_match,
+    format_schedule,
+    DEFAULT_RATING,
+    win_probability,
+)
+
+app = Flask(__name__)
+app.secret_key = "pickleball-scheduler-secret-change-in-production"
+
+PLAYERS_FILE = Path(__file__).resolve().parent / "players.json"
+MATCH_HISTORY_FILE = Path(__file__).resolve().parent / "match_history.json"
+PLAYERS_PASSWORD = "PBPlayers26"
+
+
+def load_players_list():
+    """Load the master player list. If missing or empty, return names from rankings."""
+    if not PLAYERS_FILE.exists():
+        rankings = load_rankings()
+        return sorted(rankings.keys()) if rankings else []
+    try:
+        with open(PLAYERS_FILE) as f:
+            data = json.load(f)
+        return data.get("players", []) or []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def save_players_list(players):
+    """Save the master player list (sorted, unique)."""
+    unique = list(dict.fromkeys(p.strip() for p in players if p and str(p).strip()))
+    with open(PLAYERS_FILE, "w") as f:
+        json.dump({"players": unique}, f, indent=2)
+
+
+def load_match_history():
+    """Load past match results (newest first)."""
+    if not MATCH_HISTORY_FILE.exists():
+        return []
+    try:
+        with open(MATCH_HISTORY_FILE) as f:
+            data = json.load(f)
+        matches = data.get("matches", [])
+        return list(reversed(matches))
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def append_match(team1, team2, winner, score_team1=None, score_team2=None):
+    """Append one match to history."""
+    matches = []
+    if MATCH_HISTORY_FILE.exists():
+        try:
+            with open(MATCH_HISTORY_FILE) as f:
+                data = json.load(f)
+            matches = data.get("matches", [])
+        except (json.JSONDecodeError, OSError):
+            pass
+    record = {
+        "team1": list(team1),
+        "team2": list(team2),
+        "winner": winner,
+        "date": datetime.now(timezone.utc).isoformat(),
+    }
+    if score_team1 is not None and score_team2 is not None:
+        record["score_team1"] = score_team1
+        record["score_team2"] = score_team2
+    matches.append(record)
+    with open(MATCH_HISTORY_FILE, "w") as f:
+        json.dump({"matches": matches}, f, indent=2)
+
+
+@app.route("/")
+def index():
+    rankings = load_rankings()
+    return render_template("index.html", rankings=rankings)
+
+
+@app.route("/schedule", methods=["GET", "POST"])
+def schedule():
+    if request.method == "GET":
+        rankings = load_rankings()
+        player_list = load_players_list()
+        return render_template("schedule.html", rankings=rankings, player_list=player_list)
+
+    # POST: generate schedule
+    selected = request.form.getlist("selected_players")
+    players_extra = request.form.get("players_extra", "").strip()
+    games_str = request.form.get("games", "").strip()
+
+    players = [p.strip() for p in selected if p and p.strip()]
+    if players_extra:
+        extra = [p.strip() for p in players_extra.replace(",", "\n").split() if p.strip()]
+        for p in extra:
+            if p and p not in players:
+                players.append(p)
+    players = list(dict.fromkeys(players))
+
+    if not players:
+        flash("Select at least one player from the list, or add names below.", "error")
+        return redirect(url_for("schedule"))
+
+    games = None
+    if games_str:
+        try:
+            games = int(games_str)
+            if games < 1:
+                games = None
+        except ValueError:
+            pass
+
+    try:
+        schedule_list, rankings = generate_schedule(players, games_per_round=games)
+        lines = format_schedule(schedule_list, rankings)
+        schedule_entries = []
+        for i, (team1, team2) in enumerate(schedule_list, 1):
+            r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
+            r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
+            prob = win_probability(r1, r2)
+            schedule_entries.append(
+                {
+                    "game": i,
+                    "team1": list(team1),
+                    "team2": list(team2),
+                    "line": lines[i - 1] if i <= len(lines) else "",
+                    "prob": prob,
+                }
+            )
+        return render_template(
+            "schedule_result.html",
+            schedule_entries=schedule_entries,
+            rankings=rankings,
+            players=players,
+        )
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("schedule"))
+
+
+@app.route("/schedule-results", methods=["POST"])
+def schedule_results():
+    """Record winners and optional scores from the schedule result page."""
+    count = 0
+    i = 0
+    while i < 100:
+        team1_0 = request.form.get(f"team1_0_{i}")
+        team1_1 = request.form.get(f"team1_1_{i}")
+        team2_0 = request.form.get(f"team2_0_{i}")
+        team2_1 = request.form.get(f"team2_1_{i}")
+        winner = request.form.get(f"winner_{i}")
+        score_t1 = request.form.get(f"score_team1_{i}")
+        score_t2 = request.form.get(f"score_team2_{i}")
+        if not team1_0 and not team1_1:
+            i += 1
+            continue
+        if team1_0 and team1_1 and team2_0 and team2_1 and winner and winner in ("1", "2"):
+            team1 = (team1_0.strip(), team1_1.strip())
+            team2 = (team2_0.strip(), team2_1.strip())
+            s1, s2 = None, None
+            if score_t1 not in (None, "") and score_t2 not in (None, ""):
+                try:
+                    s1 = int(score_t1)
+                    s2 = int(score_t2)
+                except ValueError:
+                    pass
+            update_rankings_for_match(None, team1, team2, int(winner), s1, s2)
+            append_match(team1, team2, int(winner), s1, s2)
+            count += 1
+        i += 1
+    if count > 0:
+        flash(f"Recorded {count} match(es). Rankings and history updated.", "success")
+    else:
+        flash("No results to save. Select a winner for each game you played.", "error")
+    return redirect(url_for("rankings"))
+
+
+@app.route("/players", methods=["GET", "POST"])
+def players():
+    if not session.get("players_authenticated"):
+        if request.method == "GET":
+            return redirect(url_for("players_login"))
+        flash("Please log in to manage players.", "error")
+        return redirect(url_for("players_login"))
+
+    if request.method == "GET":
+        player_list = load_players_list()
+        rankings = load_rankings()
+        return render_template("players.html", player_list=player_list, rankings=rankings)
+
+    # POST: add or remove player
+    add_name = request.form.get("add_name", "").strip()
+    remove_name = request.form.get("remove_name", "").strip()
+    if add_name:
+        current = load_players_list()
+        if add_name not in current:
+            current.append(add_name)
+            save_players_list(current)
+            flash(f"Added {add_name}.", "success")
+        else:
+            flash(f"{add_name} is already on the list.", "error")
+    elif remove_name:
+        current = load_players_list()
+        if remove_name in current:
+            current.remove(remove_name)
+            save_players_list(current)
+            flash(f"Removed {remove_name}.", "success")
+        else:
+            flash(f"{remove_name} was not on the list.", "error")
+    return redirect(url_for("players"))
+
+
+@app.route("/players/reset", methods=["POST"])
+def players_reset():
+    if not session.get("players_authenticated"):
+        flash("Please log in to manage players.", "error")
+        return redirect(url_for("players_login"))
+    rankings = load_rankings()
+    reset_rankings = {p: DEFAULT_RATING for p in rankings}
+    save_rankings(reset_rankings)
+    with open(MATCH_HISTORY_FILE, "w") as f:
+        json.dump({"matches": []}, f, indent=2)
+    flash("All rankings reset to 1000 and past games cleared.", "success")
+    return redirect(url_for("players"))
+
+
+@app.route("/players/ratings", methods=["POST"])
+def players_ratings():
+    if not session.get("players_authenticated"):
+        flash("Please log in to manage players.", "error")
+        return redirect(url_for("players_login"))
+    player_list = load_players_list()
+    rankings = load_rankings()
+    for i in range(len(player_list)):
+        p = request.form.get(f"player_{i}")
+        r = request.form.get(f"rating_{i}")
+        if p and p in player_list and r is not None and str(r).strip() != "":
+            try:
+                val = int(float(str(r).strip()))
+                if 0 <= val <= 3000:
+                    rankings[p] = val
+            except (ValueError, TypeError):
+                pass
+    save_rankings(rankings)
+    flash("Rankings updated.", "success")
+    return redirect(url_for("players"))
+
+
+@app.route("/players/login", methods=["GET", "POST"])
+def players_login():
+    if request.method == "POST":
+        if request.form.get("password") == PLAYERS_PASSWORD:
+            session["players_authenticated"] = True
+            return redirect(url_for("players"))
+        flash("Incorrect password.", "error")
+    return render_template("players_login.html")
+
+
+@app.route("/players/logout")
+def players_logout():
+    session.pop("players_authenticated", None)
+    return redirect(url_for("index"))
+
+
+@app.route("/results", methods=["GET", "POST"])
+def results():
+    if request.method == "GET":
+        rankings = load_rankings()
+        return render_template("results.html", rankings=rankings)
+
+    # POST: record one or more results
+    # Form can send: game_team1_0, game_team1_1, game_team2_0, game_team2_1, winner per row
+    count = 0
+    i = 0
+    while True:
+        t1_0 = request.form.get(f"team1_0_{i}")
+        t1_1 = request.form.get(f"team1_1_{i}")
+        t2_0 = request.form.get(f"team2_0_{i}")
+        t2_1 = request.form.get(f"team2_1_{i}")
+        winner = request.form.get(f"winner_{i}")
+        if not t1_0 and not t1_1 and not t2_0 and not t2_1:
+            break
+        if t1_0 and t1_1 and t2_0 and t2_1 and winner and winner in ("1", "2"):
+            team1 = (t1_0.strip(), t1_1.strip())
+            team2 = (t2_0.strip(), t2_1.strip())
+            update_rankings_for_match(None, team1, team2, int(winner))
+            append_match(team1, team2, int(winner))
+            count += 1
+        i += 1
+        if i > 50:
+            break
+
+    if count == 0:
+        # Try single-game format: p1, p2, p3, p4, winner
+        game = request.form.get("game_single", "").strip()
+        winner = request.form.get("winner_single")
+        if game and winner and winner in ("1", "2"):
+            parts = [p.strip() for p in game.replace(",", " ").split() if p.strip()]
+            if len(parts) >= 4:
+                team1 = (parts[0], parts[1])
+                team2 = (parts[2], parts[3])
+                update_rankings_for_match(None, team1, team2, int(winner))
+                append_match(team1, team2, int(winner))
+                count = 1
+
+    if count > 0:
+        flash(f"Updated rankings for {count} match(es).", "success")
+    else:
+        flash("No valid result to record. Enter Team 1, Team 2, and winner.", "error")
+    return redirect(url_for("rankings"))
+
+
+@app.route("/rankings")
+def rankings():
+    rankings = load_rankings()
+    sorted_rankings = sorted(
+        rankings.items(), key=lambda x: -x[1]
+    ) if rankings else []
+    return render_template("rankings.html", rankings=sorted_rankings)
+
+
+@app.route("/history")
+def history():
+    matches = load_match_history()
+    return render_template("history.html", matches=matches)
+
+
+@app.route("/reset-history", methods=["POST"])
+def reset_history():
+    from scheduler import HISTORY_FILE
+    if HISTORY_FILE.exists():
+        HISTORY_FILE.unlink()
+    flash("Partner/opponent history reset. Rankings unchanged.", "success")
+    return redirect(url_for("index"))
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)

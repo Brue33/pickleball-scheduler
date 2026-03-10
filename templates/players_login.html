@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Players — Log in{% endblock %}
+{% block content %}
+  <h1>Players</h1>
+  <p>Enter the password to manage the player list.</p>
+  <form method="post" action="{{ url_for('players_login') }}">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" autofocus>
+    <button type="submit">Log in</button>
+  </form>
+{% endblock %}

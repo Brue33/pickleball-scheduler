@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Rankings{% endblock %}
+{% block content %}
+  <h1>Rankings</h1>
+  {% if rankings %}
+    <table>
+      <thead>
+        <tr><th>Rank</th><th>Player</th><th>Rating</th></tr>
+      </thead>
+      <tbody>
+        {% for player, rating in rankings %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ player }}</td>
+            <td>{{ rating }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No rankings yet. <a href="{{ url_for('schedule') }}">Generate a schedule</a> and <a href="{{ url_for('results') }}">record some results</a> to get started.</p>
+  {% endif %}
+{% endblock %}
