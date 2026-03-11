@@ -5,19 +5,113 @@
   {% if rankings %}
     <table>
       <thead>
-        <tr><th>Rank</th><th>Player</th><th>Rating</th></tr>
+        <tr><th>Player</th><th>Rating</th></tr>
       </thead>
       <tbody>
         {% for player, rating in rankings %}
           <tr>
-            <td>{{ loop.index }}</td>
-            <td><span class="player-name" title="{{ bios.get(player, '')|e }}">{{ player }}</span></td>
+            <td>
+              <button type="button" class="player-name-btn" data-player="{{ player|e }}" data-bio="{{ (bios.get(player, '') or '')|e|replace('\n', '&#10;') }}">{{ player }}</button>
+            </td>
             <td>{{ rating }}</td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
+
+    <div id="bio-modal" class="bio-modal" hidden aria-hidden="true">
+      <div class="bio-modal-backdrop" aria-label="Close"></div>
+      <div class="bio-modal-content">
+        <h3 id="bio-modal-player" class="bio-modal-title"></h3>
+        <p id="bio-modal-text" class="bio-modal-body"></p>
+        <button type="button" class="bio-modal-close">Close</button>
+      </div>
+    </div>
   {% else %}
     <p>No rankings yet. <a href="{{ url_for('schedule') }}">Generate a schedule</a> and <a href="{{ url_for('results') }}">record some results</a> to get started.</p>
   {% endif %}
+{% endblock %}
+
+{% block head %}
+  <style>
+    .player-name-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      cursor: pointer;
+      font-size: inherit;
+      padding: 0;
+      text-align: left;
+    }
+    .player-name-btn:hover { text-decoration: underline; }
+    .bio-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .bio-modal[hidden] { display: none; }
+    .bio-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      cursor: pointer;
+    }
+    .bio-modal-content {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      max-width: 28rem;
+      width: 100%;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+    .bio-modal-title { margin: 0 0 0.75rem 0; font-size: 1.25rem; }
+    .bio-modal-body {
+      margin: 0 0 1rem 0;
+      color: var(--muted);
+      white-space: pre-line;
+    }
+    .bio-modal-body:empty::before { content: "No bio yet."; font-style: italic; }
+    .bio-modal-close { margin-top: 0; }
+  </style>
+  <script>
+    (function() {
+      var modal = document.getElementById('bio-modal');
+      if (!modal) return;
+      var playerEl = document.getElementById('bio-modal-player');
+      var textEl = document.getElementById('bio-modal-text');
+      var backdrop = modal.querySelector('.bio-modal-backdrop');
+      var closeBtn = modal.querySelector('.bio-modal-close');
+
+      function showBio(player, bio) {
+        bio = (bio || '').replace(/&#10;/g, '\n');
+        playerEl.textContent = player;
+        textEl.textContent = bio || '';
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        closeBtn.focus();
+      }
+
+      function hideBio() {
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+      }
+
+      document.querySelectorAll('.player-name-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          showBio(btn.dataset.player || '', btn.dataset.bio || '""');
+        });
+      });
+      if (backdrop) backdrop.addEventListener('click', hideBio);
+      if (closeBtn) closeBtn.addEventListener('click', hideBio);
+      modal.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') hideBio();
+      });
+    })();
+  </script>
 {% endblock %}

@@ -147,6 +147,7 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
     used_opponent = defaultdict(lambda: defaultdict(int))
     games_played = defaultdict(int)
     bye_count = defaultdict(int)
+    partner_count_this = defaultdict(int)
 
     def score_pairing(team1, team2):
         p1, p2 = team1
@@ -154,14 +155,23 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
         k_with = pair_key(p1, p2)
         k_with2 = pair_key(p3, p4)
         penalty = 0
-        penalty += history["with"].get(k_with, 0) * 100
-        penalty += history["with"].get(k_with2, 0) * 100
+        # Prefer even partner usage in this schedule: use pairs that have partnered fewer times
+        penalty += partner_count_this.get(k_with, 0) * 120
+        penalty += partner_count_this.get(k_with2, 0) * 120
+        # Keep with/against equal across time: penalize repeat partners from history
+        penalty += history["with"].get(k_with, 0) * 80
+        penalty += history["with"].get(k_with2, 0) * 80
         for a in team1:
             for b in team2:
                 penalty += used_opponent[a][b] * 50
         target = len(scheduled) * 4 // n + 1
         for p in team1 + team2:
             penalty += max(0, games_played[p] - target) * 80
+        # Prefer closest-to-50% matches (avoid best 2 vs worst 2)
+        r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
+        r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
+        prob = win_probability(r1, r2)
+        penalty += abs(prob - 0.5) * 200
         # Prefer giving bye to players who have had fewer byes
         playing = set(team1) | set(team2)
         bye_players = [p for p in players if p not in playing]
@@ -173,6 +183,8 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
         p1, p2 = team1
         p3, p4 = team2
         scheduled.append((team1, team2))
+        partner_count_this[pair_key(p1, p2)] += 1
+        partner_count_this[pair_key(p3, p4)] += 1
         history["with"][pair_key(p1, p2)] += 1
         history["with"][pair_key(p3, p4)] += 1
         for a in team1:
