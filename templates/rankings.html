@@ -80,7 +80,7 @@
     .bio-modal-close { margin-top: 0; }
   </style>
   <script>
-    (function() {
+    document.addEventListener('DOMContentLoaded', function() {
       var modal = document.getElementById('bio-modal');
       if (!modal) return;
       var playerEl = document.getElementById('bio-modal-player');
@@ -104,7 +104,7 @@
 
       document.querySelectorAll('.player-name-btn').forEach(function(btn) {
         btn.addEventListener('click', function() {
-          showBio(btn.dataset.player || '', btn.dataset.bio || '""');
+          showBio(btn.dataset.player || '', btn.dataset.bio || '');
         });
       });
       if (backdrop) backdrop.addEventListener('click', hideBio);
@@ -112,6 +112,6 @@
       modal.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') hideBio();
       });
-    })();
+    });
   </script>
 {% endblock %}

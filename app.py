@@ -24,11 +24,17 @@ from scheduler import (
 app = Flask(__name__)
 app.secret_key = "pickleball-scheduler-secret-change-in-production"
 
-PLAYERS_FILE = Path(__file__).resolve().parent / "players.json"
-PLAYER_BIOS_FILE = Path(__file__).resolve().parent / "player_bios.json"
-MATCH_HISTORY_FILE = Path(__file__).resolve().parent / "match_history.json"
-AVAILABILITY_FILE = Path(__file__).resolve().parent / "availability.json"
-PUBLISHED_SCHEDULE_FILE = Path(__file__).resolve().parent / "published_schedule.json"
+# Data directory: use PICKLEBALL_DATA_DIR if set (persists across code deploys), else same folder as app
+_data_dir_raw = os.environ.get("PICKLEBALL_DATA_DIR")
+_DATA_DIR = Path(_data_dir_raw) if _data_dir_raw else Path(__file__).resolve().parent
+if _data_dir_raw:
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+PLAYERS_FILE = _DATA_DIR / "players.json"
+PLAYER_BIOS_FILE = _DATA_DIR / "player_bios.json"
+MATCH_HISTORY_FILE = _DATA_DIR / "match_history.json"
+AVAILABILITY_FILE = _DATA_DIR / "availability.json"
+PUBLISHED_SCHEDULE_FILE = _DATA_DIR / "published_schedule.json"
 PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")

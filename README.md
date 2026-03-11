@@ -128,6 +128,31 @@ python scheduler.py reset-history
 - `templates/` – HTML pages for the web interface.
 - `rankings.json` – Created automatically; stores each player’s rating.
 - `play_history.json` – Tracks how often each pair played together/against.
+- `player_bios.json` – Player bios (shown on Rankings). Edit via Players → Edit player bios.
+
+### Keeping data when you push / deploy
+
+The **players list**, **past games** (match history), **current rankings**, **bios**, and other data live in the app directory by default. When you deploy new code (e.g. git pull), that directory is often overwritten and **that data can be lost**.
+
+**Option A – Persistent data directory (recommended for servers)**  
+Set the environment variable `PICKLEBALL_DATA_DIR` to a path that is **not** overwritten on deploy (e.g. a persistent volume or a directory outside the repo):
+
+```bash
+export PICKLEBALL_DATA_DIR=/var/data/pickleball   # or wherever you keep data
+python app.py
+```
+
+These are then read and written under that directory, so they survive code updates:
+
+- **Players list** (`players.json`)
+- **Past games** (`match_history.json`)
+- **Current rankings** (`rankings.json`)
+- **Partner/opponent history** (`play_history.json`)
+- **Player bios** (`player_bios.json`)
+- Availability, published schedule, etc.
+
+**Option B – Commit data to git**  
+You can commit the data files to the repo so they are pushed and pulled with your code: `players.json`, `player_bios.json`, `rankings.json`, `match_history.json`, `play_history.json`, etc. Then deploy as usual; the updated repo will include the latest data.
 
 ## Summary
 

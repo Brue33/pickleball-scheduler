@@ -8,14 +8,17 @@ Pickleball doubles scheduler with individual rankings.
 import json
 import argparse
 import sys
+import os
 from pathlib import Path
 from itertools import combinations
 from collections import defaultdict
 
 DEFAULT_RATING = 1300
 K_FACTOR = 32
-RANKINGS_FILE = Path(__file__).parent / "rankings.json"
-HISTORY_FILE = Path(__file__).parent / "play_history.json"
+_DATA_DIR = os.environ.get("PICKLEBALL_DATA_DIR")
+_BASE = Path(_DATA_DIR) if _DATA_DIR else Path(__file__).resolve().parent
+RANKINGS_FILE = _BASE / "rankings.json"
+HISTORY_FILE = _BASE / "play_history.json"
 
 
 def load_rankings():
