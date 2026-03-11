@@ -826,6 +826,27 @@ def export_play_history():
         return jsonify({"with": {}, "against": {}})
 
 
+@app.route("/export/availability")
+def export_availability():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify(load_availability())
+
+
+@app.route("/export/published_schedule")
+def export_published_schedule():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    if not PUBLISHED_SCHEDULE_FILE.exists():
+        return jsonify({})
+    try:
+        with open(PUBLISHED_SCHEDULE_FILE) as f:
+            data = json.load(f)
+        return jsonify(data)
+    except (json.JSONDecodeError, OSError):
+        return jsonify({})
+
+
 @app.route("/history")
 def history():
     matches = load_match_history()

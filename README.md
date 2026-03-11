@@ -175,6 +175,8 @@ If you host on Render (or any ephemeral host) without a persistent disk, data ch
    curl -s "$RENDER_URL/export/players?key=$EXPORT_KEY" -o players.json
    curl -s "$RENDER_URL/export/match_history?key=$EXPORT_KEY" -o match_history.json
    curl -s "$RENDER_URL/export/play_history?key=$EXPORT_KEY" -o play_history.json
+   curl -s "$RENDER_URL/export/availability?key=$EXPORT_KEY" -o availability.json
+   curl -s "$RENDER_URL/export/published_schedule?key=$EXPORT_KEY" -o published_schedule.json
    ```
 
    Then commit and push as usual. Treat the export URL and key like a password; anyone with the key can download your data.

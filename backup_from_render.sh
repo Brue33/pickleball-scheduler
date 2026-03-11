@@ -20,5 +20,7 @@ curl -s "$RENDER_URL/export/rankings?key=$EXPORT_KEY" -o rankings.json
 curl -s "$RENDER_URL/export/players?key=$EXPORT_KEY" -o players.json
 curl -s "$RENDER_URL/export/match_history?key=$EXPORT_KEY" -o match_history.json
 curl -s "$RENDER_URL/export/play_history?key=$EXPORT_KEY" -o play_history.json
+curl -s "$RENDER_URL/export/availability?key=$EXPORT_KEY" -o availability.json
+curl -s "$RENDER_URL/export/published_schedule?key=$EXPORT_KEY" -o published_schedule.json
 
-echo "Backup complete. Files updated: player_bios.json, rankings.json, players.json, match_history.json, play_history.json"
+echo "Backup complete. Files updated: player_bios.json, rankings.json, players.json, match_history.json, play_history.json, availability.json, published_schedule.json"

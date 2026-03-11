@@ -25,11 +25,10 @@
             {% for col in columns %}
               <td style="padding: 0.35rem 0.75rem; border-bottom: 1px solid var(--surface); vertical-align: top;">
                 {% if row_index < col|length %}
-                  {% set p = col[row_index] %}
-                  <strong>{{ p }}</strong><br>
+                  <strong>{{ col[row_index] }}</strong><br>
                   <span style="font-size: 0.9rem;">
-                    {% if availability.get(p) == 'in' %}<span style="color: var(--success); font-weight: 600;">In</span>
-                    {% elif availability.get(p) == 'out' %}<span style="color: var(--error);">Out</span>
+                    {% if availability.get(col[row_index]) == 'in' %}<span style="color: var(--success); font-weight: 600;">In</span>
+                    {% elif availability.get(col[row_index]) == 'out' %}<span style="color: var(--error);">Out</span>
                     {% else %}<span style="color: var(--muted);">Not Answered</span>{% endif %}
                   </span>
                 {% endif %}
@@ -63,13 +62,11 @@
               {% for col in columns %}
                 <td style="padding: 0.35rem 0.75rem; border-bottom: 1px solid var(--surface); vertical-align: top;">
                   {% if row_index < col|length %}
-                    {% set p = col[row_index] %}
-                    {% set current = availability.get(p, 'not_answered') %}
-                    <strong>{{ p }}</strong><br>
-                    <select name="avail_{{ p }}" style="max-width: 10rem; margin-top: 0.2rem;">
-                      <option value="in" {% if current == 'in' %}selected{% endif %}>In</option>
-                      <option value="out" {% if current == 'out' %}selected{% endif %}>Out</option>
-                      <option value="not_answered" {% if current == 'not_answered' %}selected{% endif %}>Not Answered</option>
+                    <strong>{{ col[row_index] }}</strong><br>
+                    <select name="avail_{{ col[row_index] }}" style="max-width: 10rem; margin-top: 0.2rem;">
+                      <option value="in" {% if availability.get(col[row_index], 'not_answered') == 'in' %}selected{% endif %}>In</option>
+                      <option value="out" {% if availability.get(col[row_index], 'not_answered') == 'out' %}selected{% endif %}>Out</option>
+                      <option value="not_answered" {% if availability.get(col[row_index], 'not_answered') == 'not_answered' %}selected{% endif %}>Not Answered</option>
                     </select>
                   {% endif %}
                 </td>
