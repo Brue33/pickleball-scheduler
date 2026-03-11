@@ -3,17 +3,29 @@
 {% block content %}
   <h1>Rankings</h1>
   {% if rankings %}
-    <table>
+    {% set columns = rankings|batch(8) %}
+    <table style="border-collapse: collapse;">
       <thead>
-        <tr><th>Player</th><th>Rating</th></tr>
+        <tr>
+          {% for col in columns %}
+            <th style="padding: 0.35rem 0.75rem; text-align: left; border-bottom: 1px solid var(--surface); vertical-align: top;">Player</th>
+          {% endfor %}
+        </tr>
       </thead>
       <tbody>
-        {% for player, rating in rankings %}
+        {% for row_index in range(8) %}
           <tr>
-            <td>
-              <button type="button" class="player-name-btn" data-player="{{ player|e }}" data-bio="{{ (bios.get(player, '') or '')|e|replace('\n', '&#10;') }}">{{ player }}</button>
-            </td>
-            <td>{{ rating }}</td>
+            {% for col in columns %}
+              <td style="padding: 0.35rem 0.75rem; border-bottom: 1px solid var(--surface); vertical-align: top;">
+                {% if row_index < col|length %}
+                  {% set player, rating = col[row_index] %}
+                  <strong>
+                    <button type="button" class="player-name-btn" data-player="{{ player|e }}" data-bio="{{ (bios.get(player, '') or '')|e|replace('\n', '&#10;') }}">{{ player }}</button>
+                  </strong><br>
+                  <span style="font-size: 0.9rem; color: var(--muted);">{{ rating }}</span>
+                {% endif %}
+              </td>
+            {% endfor %}
           </tr>
         {% endfor %}
       </tbody>

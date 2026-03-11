@@ -36,6 +36,7 @@ PLAYER_BIOS_FILE = _DATA_DIR / "player_bios.json"
 MATCH_HISTORY_FILE = _DATA_DIR / "match_history.json"
 AVAILABILITY_FILE = _DATA_DIR / "availability.json"
 PUBLISHED_SCHEDULE_FILE = _DATA_DIR / "published_schedule.json"
+DRAFT_SCHEDULE_FILE = _DATA_DIR / "draft_schedule.json"
 PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
@@ -179,6 +180,82 @@ def save_published_schedule(date_key, next_wednesday_display, players, schedule_
     }
     with open(PUBLISHED_SCHEDULE_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+
+def load_draft_schedule():
+    """Load draft schedule for this week; return None if missing or not this week."""
+    next_wed = get_next_wednesday()
+    date_key = next_wed.isoformat()
+    if not DRAFT_SCHEDULE_FILE.exists():
+        return None
+    try:
+        with open(DRAFT_SCHEDULE_FILE) as f:
+            data = json.load(f)
+        if data.get("date_key") != date_key:
+            return None
+        return data
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_draft_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings):
+    """Save draft schedule (preview on Generate tab until Publish)."""
+    data = {
+        "date_key": date_key,
+        "next_wednesday_display": next_wednesday_display,
+        "players": list(players),
+        "schedule_entries": schedule_entries,
+        "rankings": dict(rankings),
+    }
+    with open(DRAFT_SCHEDULE_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def clear_draft_schedule():
+    """Remove draft schedule file."""
+    if DRAFT_SCHEDULE_FILE.exists():
+        DRAFT_SCHEDULE_FILE.unlink()
+
+
+def _parse_draft_entries_from_form(draft):
+    """
+    Build schedule_entries from request form (team1_0_i, team1_1_i, team2_0_i, team2_1_i).
+    Recompute prob and bye from draft players and rankings.
+    Returns (schedule_entries, None) or (None, error_message).
+    """
+    players = draft["players"]
+    rankings = draft["rankings"]
+    entries = draft["schedule_entries"]
+    result = []
+    for i, e in enumerate(entries):
+        t1_0 = (request.form.get(f"team1_0_{i}") or "").strip()
+        t1_1 = (request.form.get(f"team1_1_{i}") or "").strip()
+        t2_0 = (request.form.get(f"team2_0_{i}") or "").strip()
+        t2_1 = (request.form.get(f"team2_1_{i}") or "").strip()
+        if not all([t1_0, t1_1, t2_0, t2_1]):
+            return None, f"Match {i + 1}: all four players must be selected."
+        four = {t1_0, t1_1, t2_0, t2_1}
+        if len(four) != 4:
+            return None, f"Match {i + 1}: four different players required (no duplicates)."
+        for p in four:
+            if p not in players:
+                return None, f"Match {i + 1}: '{p}' is not in this week's player list."
+        team1 = [t1_0, t1_1]
+        team2 = [t2_0, t2_1]
+        r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
+        r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
+        prob = win_probability(r1, r2)
+        playing = set(team1) | set(team2)
+        bye = sorted(set(players) - playing)
+        result.append({
+            "game": i + 1,
+            "team1": team1,
+            "team2": team2,
+            "line": e.get("line", ""),
+            "prob": prob,
+            "bye": bye,
+        })
+    return result, None
 
 
 def add_round_court_and_bye(schedule_entries, players):
@@ -339,21 +416,26 @@ def schedule_record_results():
 
 @app.route("/generate", methods=["GET", "POST"])
 def generate():
-    """Generate schedule (password protected). Saves as published schedule for Schedule tab."""
+    """Generate schedule (password protected). Saves as draft; Publish makes it live on Schedule tab."""
+    next_wed = get_next_wednesday()
+    date_key = next_wed.isoformat()
+
     if request.method == "GET":
         player_list = load_players_list()
-        next_wed = get_next_wednesday()
         schedule_players_unlocked = session.get("schedule_players_unlocked", False)
-        date_key = next_wed.isoformat()
         availability_all = load_availability()
         availability = availability_all.get(date_key, {})
         players_in = [p for p in player_list if availability.get(p) == "in"]
+        draft = load_draft_schedule()
+        if draft:
+            add_round_court_and_bye(draft["schedule_entries"], draft["players"])
         return render_template(
             "generate.html",
             player_list=player_list,
             next_wednesday=next_wed.strftime("%A, %B %d, %Y"),
             schedule_players_unlocked=schedule_players_unlocked,
             players_in=players_in,
+            draft_schedule=draft,
         )
 
     # POST: generate schedule (requires schedule password)
@@ -408,23 +490,78 @@ def generate():
                 }
             )
         add_round_court_and_bye(schedule_entries, players)
-        next_wed = get_next_wednesday()
-        save_published_schedule(
-            next_wed.isoformat(),
+        save_draft_schedule(
+            date_key,
             next_wed.strftime("%A, %B %d, %Y"),
             players,
             schedule_entries,
             rankings,
         )
-        return render_template(
-            "schedule_result.html",
-            schedule_entries=schedule_entries,
-            rankings=rankings,
-            players=players,
-        )
+        flash("Schedule generated. Review it below and click Publish when ready to go live.", "success")
+        return redirect(url_for("generate"))
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("generate"))
+
+
+@app.route("/generate/publish", methods=["POST"])
+def generate_publish():
+    """Publish the draft schedule (optionally with edits from form) so it appears on the Schedule tab."""
+    draft = load_draft_schedule()
+    if not draft:
+        flash("No draft schedule to publish. Generate a schedule first.", "error")
+        return redirect(url_for("generate"))
+    # If form has draft edits, use them; otherwise use current draft
+    if request.form.get("team1_0_0") is not None:
+        entries, err = _parse_draft_entries_from_form(draft)
+        if err:
+            flash(err, "error")
+            return redirect(url_for("generate"))
+        add_round_court_and_bye(entries, draft["players"])
+        schedule_entries = entries
+    else:
+        schedule_entries = draft["schedule_entries"]
+    save_published_schedule(
+        draft["date_key"],
+        draft["next_wednesday_display"],
+        draft["players"],
+        schedule_entries,
+        draft["rankings"],
+    )
+    clear_draft_schedule()
+    flash("Schedule is now live on the Schedule tab.", "success")
+    return redirect(url_for("schedule"))
+
+
+@app.route("/generate/save-draft", methods=["POST"])
+def generate_save_draft():
+    """Save edited draft schedule from form."""
+    draft = load_draft_schedule()
+    if not draft:
+        flash("No draft schedule to save. Generate a schedule first.", "error")
+        return redirect(url_for("generate"))
+    entries, err = _parse_draft_entries_from_form(draft)
+    if err:
+        flash(err, "error")
+        return redirect(url_for("generate"))
+    add_round_court_and_bye(entries, draft["players"])
+    save_draft_schedule(
+        draft["date_key"],
+        draft["next_wednesday_display"],
+        draft["players"],
+        entries,
+        draft["rankings"],
+    )
+    flash("Draft saved. You can keep editing or Publish when ready.", "success")
+    return redirect(url_for("generate"))
+
+
+@app.route("/generate/regenerate", methods=["GET", "POST"])
+def generate_regenerate():
+    """Clear the draft and show the generate form again."""
+    clear_draft_schedule()
+    flash("Draft cleared. Change players or options and generate again.", "success")
+    return redirect(url_for("generate"))
 
 
 @app.route("/schedule-results", methods=["POST"])

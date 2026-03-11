@@ -4,7 +4,78 @@
   <h1>Generate schedule</h1>
   <p style="color: var(--muted); font-size: 0.9rem;">For {{ next_wednesday }}. Select who is playing (4+ players; byes used when odd). Password required.</p>
 
-  {% if not player_list %}
+  {% if draft_schedule %}
+    <h2 style="font-size: 1.1rem;">Draft schedule — not yet live</h2>
+    <p style="color: var(--muted); font-size: 0.9rem;">{{ draft_schedule.next_wednesday_display }} — {{ draft_schedule.players|join(", ") }}</p>
+    <p style="color: var(--muted); font-size: 0.9rem;">Edit any match using the dropdowns, then Save draft or Publish.</p>
+    <form method="post" action="{{ url_for('generate_save_draft') }}" id="draft-form">
+      <table>
+        <thead>
+          <tr>
+            <th>Court</th>
+            <th>Team 1</th>
+            <th>Team 2</th>
+            <th>Win chance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in draft_schedule.schedule_entries %}
+            {% set i = loop.index0 %}
+            {% if loop.first or e.get('round', 1) != draft_schedule.schedule_entries[loop.index0 - 1].get('round', 1) %}
+              <tr><td colspan="4" style="font-weight: 600; background: var(--surface); padding: 0.5rem 0.75rem;">Round {{ e.get('round', 1) }}</td></tr>
+            {% endif %}
+            <tr>
+              <td>Court {{ e.get('court', 'A') }}</td>
+              <td>
+                <select name="team1_0_{{ i }}" style="max-width: 9rem;">
+                  {% for p in draft_schedule.players %}
+                    <option value="{{ p|e }}" {% if e.team1[0] == p %}selected{% endif %}>{{ p }}</option>
+                  {% endfor %}
+                </select>
+                &amp;
+                <select name="team1_1_{{ i }}" style="max-width: 9rem;">
+                  {% for p in draft_schedule.players %}
+                    <option value="{{ p|e }}" {% if e.team1[1] == p %}selected{% endif %}>{{ p }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="team2_0_{{ i }}" style="max-width: 9rem;">
+                  {% for p in draft_schedule.players %}
+                    <option value="{{ p|e }}" {% if e.team2[0] == p %}selected{% endif %}>{{ p }}</option>
+                  {% endfor %}
+                </select>
+                &amp;
+                <select name="team2_1_{{ i }}" style="max-width: 9rem;">
+                  {% for p in draft_schedule.players %}
+                    <option value="{{ p|e }}" {% if e.team2[1] == p %}selected{% endif %}>{{ p }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>{{ (e.prob * 100)|int }}%</td>
+            </tr>
+            {% if e.get('round_bye') %}
+              <tr><td colspan="4" style="color: var(--muted); font-size: 0.9rem;">Bye: {{ e.round_bye|join(', ') }}</td></tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+      <p style="margin-top: 1rem;">
+        <button type="submit" formaction="{{ url_for('generate_save_draft') }}" class="btn-secondary">Save draft</button>
+        — Save edits and keep editing.
+      </p>
+      <p style="margin-top: 0.5rem;">
+        <button type="submit" formaction="{{ url_for('generate_publish') }}" class="btn">Publish schedule</button>
+        — Makes this schedule live on the Schedule tab.
+      </p>
+    </form>
+    <p style="margin-top: 1rem;">
+      <form method="post" action="{{ url_for('generate_regenerate') }}" style="display: inline;">
+        <button type="submit" class="btn-secondary">Regenerate</button>
+      </form>
+      — Clear draft and change players or options, then generate again.
+    </p>
+  {% elif not player_list %}
     <p><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
   {% else %}
     <form method="post" action="{{ url_for('generate') }}">

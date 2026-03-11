@@ -9,19 +9,32 @@
     <p><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
   {% elif read_only %}
     <p style="color: var(--muted); font-size: 0.9rem;">Schedule is already generated. Availability is locked. Enter the schedule password to edit.</p>
-    <table style="max-width: 24rem;">
+    {% set sorted_players = player_list|sort %}
+    {% set columns = sorted_players|batch(8) %}
+    <table style="border-collapse: collapse;">
       <thead>
-        <tr><th>Player</th><th>Status</th></tr>
+        <tr>
+          {% for col in columns %}
+            <th style="padding: 0.35rem 0.75rem; text-align: left; border-bottom: 1px solid var(--surface); vertical-align: top;">Player</th>
+          {% endfor %}
+        </tr>
       </thead>
       <tbody>
-        {% for p in player_list %}
+        {% for row_index in range(8) %}
           <tr>
-            <td>{{ p }}</td>
-            <td>
-              {% if availability.get(p) == 'in' %}<span style="color: var(--success); font-weight: 600;">In</span>
-              {% elif availability.get(p) == 'out' %}<span style="color: var(--error);">Out</span>
-              {% else %}<span style="color: var(--muted);">Not Answered</span>{% endif %}
-            </td>
+            {% for col in columns %}
+              <td style="padding: 0.35rem 0.75rem; border-bottom: 1px solid var(--surface); vertical-align: top;">
+                {% if row_index < col|length %}
+                  {% set p = col[row_index] %}
+                  <strong>{{ p }}</strong><br>
+                  <span style="font-size: 0.9rem;">
+                    {% if availability.get(p) == 'in' %}<span style="color: var(--success); font-weight: 600;">In</span>
+                    {% elif availability.get(p) == 'out' %}<span style="color: var(--error);">Out</span>
+                    {% else %}<span style="color: var(--muted);">Not Answered</span>{% endif %}
+                  </span>
+                {% endif %}
+              </td>
+            {% endfor %}
           </tr>
         {% endfor %}
       </tbody>
@@ -34,22 +47,33 @@
   {% else %}
     <p style="color: var(--muted); font-size: 0.9rem;">Set each player's status for next Wednesday. Default is Not Answered each week.</p>
     <form method="post" action="{{ url_for('availability') }}">
-      <table style="max-width: 24rem;">
+      {% set sorted_players = player_list|sort %}
+      {% set columns = sorted_players|batch(8) %}
+      <table style="border-collapse: collapse;">
         <thead>
-          <tr><th>Player</th><th>Status</th></tr>
+          <tr>
+            {% for col in columns %}
+              <th style="padding: 0.35rem 0.75rem; text-align: left; border-bottom: 1px solid var(--surface); vertical-align: top;">Player</th>
+            {% endfor %}
+          </tr>
         </thead>
         <tbody>
-          {% for p in player_list %}
-            {% set current = availability.get(p, 'not_answered') %}
+          {% for row_index in range(8) %}
             <tr>
-              <td>{{ p }}</td>
-              <td>
-                <select name="avail_{{ p }}" style="max-width: 12rem;">
-                  <option value="in" {% if current == 'in' %}selected{% endif %}>In</option>
-                  <option value="out" {% if current == 'out' %}selected{% endif %}>Out</option>
-                  <option value="not_answered" {% if current == 'not_answered' %}selected{% endif %}>Not Answered</option>
-                </select>
-              </td>
+              {% for col in columns %}
+                <td style="padding: 0.35rem 0.75rem; border-bottom: 1px solid var(--surface); vertical-align: top;">
+                  {% if row_index < col|length %}
+                    {% set p = col[row_index] %}
+                    {% set current = availability.get(p, 'not_answered') %}
+                    <strong>{{ p }}</strong><br>
+                    <select name="avail_{{ p }}" style="max-width: 10rem; margin-top: 0.2rem;">
+                      <option value="in" {% if current == 'in' %}selected{% endif %}>In</option>
+                      <option value="out" {% if current == 'out' %}selected{% endif %}>Out</option>
+                      <option value="not_answered" {% if current == 'not_answered' %}selected{% endif %}>Not Answered</option>
+                    </select>
+                  {% endif %}
+                </td>
+              {% endfor %}
             </tr>
           {% endfor %}
         </tbody>
