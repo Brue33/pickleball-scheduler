@@ -2,7 +2,9 @@
 {% block title %}Mitten Smash Pickleball — Home{% endblock %}
 {% block content %}
   <h1>Mitten Smash Pickleball</h1>
-  <p>Generate weekly schedules with rotating partners, see win chances from ratings, and update rankings after each match.</p>
+  <p>Welcome to Mitten Smash, a friendly pickleball league. We officially play one day a week in doubles, rotating partners and opponents as much as possible. Rankings are calculated per person, but every point matters!</p>
+  <p>On Slack you can reach out to coordinate more games with others.</p>
+  <p><strong>Next game:</strong> {{ next_wednesday }}</p>
   <ul>
     <li><a href="{{ url_for('schedule') }}">Schedule</a> — This week's published schedule.</li>
     <li><a href="{{ url_for('availability') }}">Availability</a> — Mark yourself in or out for next Wednesday.</li>
@@ -11,11 +13,6 @@
     <li><a href="{{ url_for('rankings') }}">Rankings</a> — View current ratings (Elo-style).</li>
     <li><a href="{{ url_for('history') }}">Past games</a> — Review all finished match outcomes.</li>
   </ul>
-  {% if rankings %}
-    <p><strong>Current players with ratings:</strong> {{ rankings|length }}</p>
-  {% else %}
-    <p>No rankings yet. Generate a schedule and record some results to get started.</p>
-  {% endif %}
   <form method="post" action="{{ url_for('reset_history') }}" style="margin-top: 1.5rem;" onsubmit="return confirm('Reset partner/opponent history? Rankings will not change.');">
     <label for="reset_history_password">Password (required to reset)</label>
     <input type="password" id="reset_history_password" name="reset_history_password" placeholder="Password" style="max-width: 14rem; margin-right: 0.5rem;">

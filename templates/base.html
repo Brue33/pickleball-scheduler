@@ -71,10 +71,10 @@
     <a href="{{ url_for('index') }}">Home</a>
     <a href="{{ url_for('schedule') }}">Schedule</a>
     <a href="{{ url_for('availability') }}">Availability</a>
-    <a href="{{ url_for('generate') }}">Generate</a>
-    <a href="{{ url_for('players') }}">Players</a>
     <a href="{{ url_for('rankings') }}">Rankings</a>
     <a href="{{ url_for('history') }}">Past games</a>
+    <a href="{{ url_for('generate') }}">Generate</a>
+    <a href="{{ url_for('players') }}">Players</a>
   </nav>
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}

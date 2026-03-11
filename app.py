@@ -182,7 +182,9 @@ def add_round_court_and_bye(schedule_entries, players):
 @app.route("/")
 def index():
     rankings = load_rankings()
-    return render_template("index.html", rankings=rankings)
+    next_wed = get_next_wednesday()
+    next_wed_str = next_wed.strftime("%A, %B %d, %Y")
+    return render_template("index.html", rankings=rankings, next_wednesday=next_wed_str)
 
 
 @app.route("/slack/command", methods=["POST"])
