@@ -11,7 +11,7 @@
         {% for player, rating in rankings %}
           <tr>
             <td>{{ loop.index }}</td>
-            <td>{{ player }}</td>
+            <td><span class="player-name" title="{{ bios.get(player, '')|e }}">{{ player }}</span></td>
             <td>{{ rating }}</td>
           </tr>
         {% endfor %}

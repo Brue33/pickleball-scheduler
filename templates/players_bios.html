@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Edit player bios{% endblock %}
+{% block content %}
+  <h1>Edit player bios</h1>
+  <p style="color: var(--muted); font-size: 0.9rem;">Bios are shown when hovering over a player's name on the <a href="{{ url_for('rankings') }}">Rankings</a> tab.</p>
+  <p><a href="{{ url_for('players') }}" class="btn-secondary">Back to player list</a></p>
+  {% if player_list %}
+    <form method="post" action="{{ url_for('players_bios') }}" style="margin-top: 1rem;">
+      {% for p in player_list %}
+        <label for="bio_{{ p }}" style="margin-top: 1rem; display: block;"><strong>{{ p }}</strong></label>
+        <textarea id="bio_{{ p }}" name="bio_{{ p }}" rows="3" placeholder="Brief bio (e.g. years playing, handedness, paddle, location)" style="max-width: 32rem;">{{ bios.get(p, '') }}</textarea>
+      {% endfor %}
+      <button type="submit" style="margin-top: 1rem;">Save bios</button>
+    </form>
+  {% else %}
+    <p>No players yet. <a href="{{ url_for('players') }}">Add players</a> first.</p>
+  {% endif %}
+{% endblock %}

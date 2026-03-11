@@ -25,6 +25,7 @@ app = Flask(__name__)
 app.secret_key = "pickleball-scheduler-secret-change-in-production"
 
 PLAYERS_FILE = Path(__file__).resolve().parent / "players.json"
+PLAYER_BIOS_FILE = Path(__file__).resolve().parent / "player_bios.json"
 MATCH_HISTORY_FILE = Path(__file__).resolve().parent / "match_history.json"
 AVAILABILITY_FILE = Path(__file__).resolve().parent / "availability.json"
 PUBLISHED_SCHEDULE_FILE = Path(__file__).resolve().parent / "published_schedule.json"
@@ -63,6 +64,23 @@ def save_players_list(players):
     unique = list(dict.fromkeys(p.strip() for p in players if p and str(p).strip()))
     with open(PLAYERS_FILE, "w") as f:
         json.dump({"players": unique}, f, indent=2)
+
+
+def load_player_bios():
+    """Load player name -> bio text. Returns dict."""
+    if not PLAYER_BIOS_FILE.exists():
+        return {}
+    try:
+        with open(PLAYER_BIOS_FILE) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_player_bios(bios):
+    """Save player bios dict."""
+    with open(PLAYER_BIOS_FILE, "w") as f:
+        json.dump(bios, f, indent=2)
 
 
 def load_match_history():
@@ -474,6 +492,33 @@ def players():
     return redirect(url_for("players"))
 
 
+@app.route("/players/bios", methods=["GET", "POST"])
+def players_bios():
+    if not session.get("players_authenticated"):
+        if request.method == "GET":
+            return redirect(url_for("players_login"))
+        flash("Please log in to manage players.", "error")
+        return redirect(url_for("players_login"))
+    player_list = load_players_list()
+    bios = load_player_bios()
+    if request.method == "POST":
+        for p in player_list:
+            key = f"bio_{p}"
+            val = request.form.get(key, "").strip()
+            if val:
+                bios[p] = val
+            elif p in bios:
+                del bios[p]
+        save_player_bios(bios)
+        flash("Bios saved. They appear on hover on the Rankings tab.", "success")
+        return redirect(url_for("players_bios"))
+    return render_template(
+        "players_bios.html",
+        player_list=player_list,
+        bios=bios,
+    )
+
+
 @app.route("/players/reset", methods=["POST"])
 def players_reset():
     if not session.get("players_authenticated"):
@@ -580,7 +625,8 @@ def rankings():
     sorted_rankings = sorted(
         rankings.items(), key=lambda x: -x[1]
     ) if rankings else []
-    return render_template("rankings.html", rankings=sorted_rankings)
+    bios = load_player_bios()
+    return render_template("rankings.html", rankings=sorted_rankings, bios=bios)
 
 
 @app.route("/history")
