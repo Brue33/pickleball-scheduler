@@ -1,38 +1,60 @@
 {% extends "base.html" %}
-{% block title %}Available{% endblock %}
+{% block title %}Availability{% endblock %}
 {% block content %}
-  <h1>Available</h1>
+  <h1>Availability</h1>
 
   <h2 style="font-size: 1.1rem; margin-top: 1.25rem;">Games on {{ next_wednesday }}</h2>
-  <p style="color: var(--muted); font-size: 0.9rem;">Mark yourself in or out for next Wednesday.</p>
-  <form method="post" action="{{ url_for('schedule_availability') }}" style="margin-bottom: 1rem;">
-    <label for="availability_player">I am</label>
-    <select id="availability_player" name="availability_player" style="max-width: 14rem;">
-      <option value="">— Select name —</option>
-      {% for p in player_list %}
-        <option value="{{ p }}">{{ p }}</option>
-      {% endfor %}
-    </select>
-    <label for="availability_status">I'm</label>
-    <select id="availability_status" name="availability_status" style="max-width: 8rem;">
-      <option value="">—</option>
-      <option value="in">In</option>
-      <option value="out">Out</option>
-    </select>
-    <button type="submit" style="margin-top: 0;">Save</button>
-  </form>
-  {% if availability or player_list %}
-    <p style="color: var(--muted); font-size: 0.9rem;"><strong>Who's in/out:</strong></p>
-    <ul style="list-style: none; padding: 0; margin-bottom: 1.5rem;">
-      {% for p in player_list %}
-        <li style="margin-bottom: 0.25rem;">
-          {{ p }} — {% if availability.get(p) == 'in' %}<span style="color: var(--success);">In</span>{% elif availability.get(p) == 'out' %}<span style="color: var(--error);">Out</span>{% else %}<span style="color: var(--muted);">not set</span>{% endif %}
-        </li>
-      {% endfor %}
-    </ul>
-  {% endif %}
 
   {% if not player_list %}
-    <p style="margin-top: 1rem;"><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
+    <p><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
+  {% elif read_only %}
+    <p style="color: var(--muted); font-size: 0.9rem;">Schedule is already generated. Availability is locked. Enter the schedule password to edit.</p>
+    <table style="max-width: 24rem;">
+      <thead>
+        <tr><th>Player</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for p in player_list %}
+          <tr>
+            <td>{{ p }}</td>
+            <td>
+              {% if availability.get(p) == 'in' %}<span style="color: var(--success); font-weight: 600;">In</span>
+              {% elif availability.get(p) == 'out' %}<span style="color: var(--error);">Out</span>
+              {% else %}<span style="color: var(--muted);">Not Answered</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <form method="post" action="{{ url_for('availability_unlock') }}" style="margin-top: 1rem;">
+      <label for="availability_unlock_password">Schedule password to unlock</label>
+      <input type="password" id="availability_unlock_password" name="availability_unlock_password" placeholder="Password" style="max-width: 14rem;">
+      <button type="submit" class="btn btn-secondary" style="margin-top: 0.25rem;">Unlock to edit</button>
+    </form>
+  {% else %}
+    <p style="color: var(--muted); font-size: 0.9rem;">Set each player's status for next Wednesday. Default is Not Answered each week.</p>
+    <form method="post" action="{{ url_for('availability') }}">
+      <table style="max-width: 24rem;">
+        <thead>
+          <tr><th>Player</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for p in player_list %}
+            {% set current = availability.get(p, 'not_answered') %}
+            <tr>
+              <td>{{ p }}</td>
+              <td>
+                <select name="avail_{{ p }}" style="max-width: 12rem;">
+                  <option value="in" {% if current == 'in' %}selected{% endif %}>In</option>
+                  <option value="out" {% if current == 'out' %}selected{% endif %}>Out</option>
+                  <option value="not_answered" {% if current == 'not_answered' %}selected{% endif %}>Not Answered</option>
+                </select>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit" style="margin-top: 0.75rem;">Save availability</button>
+    </form>
   {% endif %}
 {% endblock %}

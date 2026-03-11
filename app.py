@@ -234,39 +234,53 @@ def schedule():
     )
 
 
-@app.route("/availability", methods=["GET"])
+@app.route("/availability", methods=["GET", "POST"])
 def availability():
-    """Mark yourself in/out for next Wednesday."""
+    """Availability for next Wednesday. List all players with In/Out/Not Answered. Locked after schedule is generated unless password entered."""
     player_list = load_players_list()
     next_wed = get_next_wednesday()
     next_wed_str = next_wed.strftime("%A, %B %d, %Y")
     date_key = next_wed.isoformat()
     availability_all = load_availability()
     availability = availability_all.get(date_key, {})
+    published = load_published_schedule()
+    unlocked_week = session.get("availability_edit_unlocked_week")
+    read_only = bool(published) and (unlocked_week != date_key)
+
+    if request.method == "POST" and not read_only:
+        # Bulk save: one dropdown per player
+        for p in player_list:
+            val = request.form.get(f"avail_{p}", "not_answered").strip().lower()
+            if val not in ("in", "out", "not_answered"):
+                val = "not_answered"
+            if date_key not in availability_all:
+                availability_all[date_key] = {}
+            availability_all[date_key][p] = val
+        save_availability(availability_all)
+        flash("Availability saved.", "success")
+        return redirect(url_for("availability"))
+
+    # Normalize for display: missing => not_answered
+    availability_display = {p: availability.get(p) or "not_answered" for p in player_list} if player_list else {}
     return render_template(
         "availability.html",
         player_list=player_list,
         next_wednesday=next_wed_str,
         date_key=date_key,
-        availability=availability,
+        availability=availability_display,
+        read_only=read_only,
     )
 
 
-@app.route("/schedule/availability", methods=["POST"])
-def schedule_availability():
-    player_name = request.form.get("availability_player", "").strip()
-    status = request.form.get("availability_status", "").strip().lower()
-    if not player_name or status not in ("in", "out"):
-        flash("Select your name and In or Out.", "error")
+@app.route("/availability/unlock", methods=["POST"])
+def availability_unlock():
+    """Unlock availability editing after schedule is generated (password PBGames26)."""
+    date_key = get_next_wednesday().isoformat()
+    if request.form.get("availability_unlock_password", "").strip() != SCHEDULE_PASSWORD:
+        flash("Incorrect password. Use the schedule password to edit availability after the schedule is generated.", "error")
         return redirect(url_for("availability"))
-    next_wed = get_next_wednesday()
-    date_key = next_wed.isoformat()
-    availability_all = load_availability()
-    if date_key not in availability_all:
-        availability_all[date_key] = {}
-    availability_all[date_key][player_name] = status
-    save_availability(availability_all)
-    flash(f"Marked {player_name} as {status} for next Wednesday.", "success")
+    session["availability_edit_unlocked_week"] = date_key
+    flash("You can now edit availability.", "success")
     return redirect(url_for("availability"))
 
 
