@@ -3,28 +3,17 @@
 {% block content %}
   <h1>Rankings</h1>
   {% if rankings %}
-    {% set columns = rankings|batch(8) %}
-    <table style="border-collapse: collapse;">
+    <table>
       <thead>
-        <tr>
-          {% for col in columns %}
-            <th style="padding: 0.35rem 0.75rem; text-align: left; border-bottom: 1px solid var(--surface); vertical-align: top;">Player</th>
-          {% endfor %}
-        </tr>
+        <tr><th>Player</th><th>Rating</th></tr>
       </thead>
       <tbody>
-        {% for row_index in range(8) %}
+        {% for player, rating in rankings %}
           <tr>
-            {% for col in columns %}
-              <td style="padding: 0.35rem 0.75rem; border-bottom: 1px solid var(--surface); vertical-align: top;">
-                {% if row_index < col|length %}
-                  <strong>
-                    <button type="button" class="player-name-btn" data-player="{{ col[row_index][0]|e }}" data-bio="{{ (bios.get(col[row_index][0], '') or '')|e|replace('\n', '&#10;') }}">{{ col[row_index][0] }}</button>
-                  </strong><br>
-                  <span style="font-size: 0.9rem; color: var(--muted);">{{ col[row_index][1] }}</span>
-                {% endif %}
-              </td>
-            {% endfor %}
+            <td>
+              <button type="button" class="player-name-btn" data-player="{{ player|e }}" data-bio="{{ (bios.get(player, '') or '')|e|replace('\n', '&#10;') }}">{{ player }}</button>
+            </td>
+            <td>{{ rating }}</td>
           </tr>
         {% endfor %}
       </tbody>
