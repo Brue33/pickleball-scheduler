@@ -222,9 +222,6 @@ def schedule():
     player_list = load_players_list()
     next_wed = get_next_wednesday()
     next_wed_str = next_wed.strftime("%A, %B %d, %Y")
-    date_key = next_wed.isoformat()
-    availability_all = load_availability()
-    availability = availability_all.get(date_key, {})
     published = load_published_schedule()
     if published:
         add_round_court_and_bye(published["schedule_entries"], published["players"])
@@ -233,9 +230,25 @@ def schedule():
         rankings=rankings,
         player_list=player_list,
         next_wednesday=next_wed_str,
+        published_schedule=published,
+    )
+
+
+@app.route("/availability", methods=["GET"])
+def availability():
+    """Mark yourself in/out for next Wednesday."""
+    player_list = load_players_list()
+    next_wed = get_next_wednesday()
+    next_wed_str = next_wed.strftime("%A, %B %d, %Y")
+    date_key = next_wed.isoformat()
+    availability_all = load_availability()
+    availability = availability_all.get(date_key, {})
+    return render_template(
+        "availability.html",
+        player_list=player_list,
+        next_wednesday=next_wed_str,
         date_key=date_key,
         availability=availability,
-        published_schedule=published,
     )
 
 
@@ -245,7 +258,7 @@ def schedule_availability():
     status = request.form.get("availability_status", "").strip().lower()
     if not player_name or status not in ("in", "out"):
         flash("Select your name and In or Out.", "error")
-        return redirect(url_for("schedule"))
+        return redirect(url_for("availability"))
     next_wed = get_next_wednesday()
     date_key = next_wed.isoformat()
     availability_all = load_availability()
@@ -254,7 +267,7 @@ def schedule_availability():
     availability_all[date_key][player_name] = status
     save_availability(availability_all)
     flash(f"Marked {player_name} as {status} for next Wednesday.", "success")
-    return redirect(url_for("schedule"))
+    return redirect(url_for("availability"))
 
 
 @app.route("/schedule/unlock-players", methods=["POST"])
@@ -290,11 +303,16 @@ def generate():
         player_list = load_players_list()
         next_wed = get_next_wednesday()
         schedule_players_unlocked = session.get("schedule_players_unlocked", False)
+        date_key = next_wed.isoformat()
+        availability_all = load_availability()
+        availability = availability_all.get(date_key, {})
+        players_in = [p for p in player_list if availability.get(p) == "in"]
         return render_template(
             "generate.html",
             player_list=player_list,
             next_wednesday=next_wed.strftime("%A, %B %d, %Y"),
             schedule_players_unlocked=schedule_players_unlocked,
+            players_in=players_in,
         )
 
     # POST: generate schedule (requires schedule password)
@@ -557,6 +575,9 @@ def history():
 
 @app.route("/reset-history", methods=["POST"])
 def reset_history():
+    if request.form.get("reset_history_password", "").strip() != PLAYERS_PASSWORD:
+        flash("Incorrect password. Use the players password to reset partner history.", "error")
+        return redirect(url_for("index"))
     from scheduler import HISTORY_FILE
     if HISTORY_FILE.exists():
         HISTORY_FILE.unlink()

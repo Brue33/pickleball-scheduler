@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Pickleball Scheduler — Home{% endblock %}
+{% block title %}Mitten Smash Pickleball — Home{% endblock %}
 {% block content %}
-  <h1>Pickleball Doubles Scheduler</h1>
+  <h1>Mitten Smash Pickleball</h1>
   <p>Generate weekly schedules with rotating partners, see win chances from ratings, and update rankings after each match.</p>
   <ul>
-    <li><a href="{{ url_for('schedule') }}">Schedule</a> — See who’s in/out and this week’s published schedule.</li>
+    <li><a href="{{ url_for('schedule') }}">Schedule</a> — This week's published schedule.</li>
+    <li><a href="{{ url_for('availability') }}">Available</a> — Mark yourself in or out for next Wednesday.</li>
     <li><a href="{{ url_for('generate') }}">Generate</a> — Create this week’s games (password required).</li>
     <li><a href="{{ url_for('players') }}">Players</a> — Manage your player list (password protected).</li>
     <li><a href="{{ url_for('rankings') }}">Rankings</a> — View current ratings (Elo-style).</li>
@@ -16,6 +17,8 @@
     <p>No rankings yet. Generate a schedule and record some results to get started.</p>
   {% endif %}
   <form method="post" action="{{ url_for('reset_history') }}" style="margin-top: 1.5rem;" onsubmit="return confirm('Reset partner/opponent history? Rankings will not change.');">
-    <button type="submit" class="btn btn-secondary">Reset partner history (new season)</button>
+    <label for="reset_history_password">Password (required to reset)</label>
+    <input type="password" id="reset_history_password" name="reset_history_password" placeholder="Password" style="max-width: 14rem; margin-right: 0.5rem;">
+    <button type="submit" class="btn btn-secondary" style="margin-top: 0.25rem;">Reset partner history (new season)</button>
   </form>
 {% endblock %}

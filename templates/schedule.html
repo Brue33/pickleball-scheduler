@@ -3,35 +3,6 @@
 {% block content %}
   <h1>Schedule</h1>
 
-  <h2 style="font-size: 1.1rem; margin-top: 1.25rem;">Games on {{ next_wednesday }}</h2>
-  <p style="color: var(--muted); font-size: 0.9rem;">Mark yourself in or out for next Wednesday.</p>
-  <form method="post" action="{{ url_for('schedule_availability') }}" style="margin-bottom: 1rem;">
-    <label for="availability_player">I am</label>
-    <select id="availability_player" name="availability_player" style="max-width: 14rem;">
-      <option value="">— Select name —</option>
-      {% for p in player_list %}
-        <option value="{{ p }}">{{ p }}</option>
-      {% endfor %}
-    </select>
-    <label for="availability_status">I'm</label>
-    <select id="availability_status" name="availability_status" style="max-width: 8rem;">
-      <option value="">—</option>
-      <option value="in">In</option>
-      <option value="out">Out</option>
-    </select>
-    <button type="submit" style="margin-top: 0;">Save</button>
-  </form>
-  {% if availability or player_list %}
-    <p style="color: var(--muted); font-size: 0.9rem;"><strong>Who's in/out:</strong></p>
-    <ul style="list-style: none; padding: 0; margin-bottom: 1.5rem;">
-      {% for p in player_list %}
-        <li style="margin-bottom: 0.25rem;">
-          {{ p }} — {% if availability.get(p) == 'in' %}<span style="color: var(--success);">In</span>{% elif availability.get(p) == 'out' %}<span style="color: var(--error);">Out</span>{% else %}<span style="color: var(--muted);">not set</span>{% endif %}
-        </li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-
   {% if published_schedule %}
     <h2 style="font-size: 1.1rem;">This week's published schedule</h2>
     <p style="color: var(--muted); font-size: 0.9rem;">{{ published_schedule.next_wednesday_display }} — {{ published_schedule.players|join(", ") }}</p>

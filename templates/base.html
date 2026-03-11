@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Pickleball Scheduler{% endblock %}</title>
+  <title>{% block title %}Mitten Smash Pickleball{% endblock %}</title>
   <style>
     :root {
       --bg: #0f1419;
@@ -70,6 +70,7 @@
   <nav>
     <a href="{{ url_for('index') }}">Home</a>
     <a href="{{ url_for('schedule') }}">Schedule</a>
+    <a href="{{ url_for('availability') }}">Available</a>
     <a href="{{ url_for('generate') }}">Generate</a>
     <a href="{{ url_for('players') }}">Players</a>
     <a href="{{ url_for('rankings') }}">Rankings</a>

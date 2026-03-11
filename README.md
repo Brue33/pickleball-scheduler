@@ -1,4 +1,4 @@
-# Pickleball Doubles Scheduler
+# Mitten Smash Pickleball
 
 Weekly doubles schedule with **individual rankings**, **win probability** per match, **partner rotation**, and **post-match ranking updates**.
 

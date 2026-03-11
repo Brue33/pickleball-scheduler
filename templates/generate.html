@@ -11,10 +11,10 @@
       <label for="selected_players">Who is playing this week?</label>
       <select id="selected_players" name="selected_players" multiple size="10" style="max-width: 20rem;">
         {% for p in player_list %}
-          <option value="{{ p }}">{{ p }}</option>
+          <option value="{{ p }}" {% if p in players_in %}selected style="background: var(--surface); color: var(--success); font-weight: 600;"{% endif %}>{{ p }}{% if p in players_in %} ✓ In{% endif %}</option>
         {% endfor %}
       </select>
-      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Hold Ctrl (Windows/Linux) or Cmd (Mac) to select multiple names.</p>
+      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Players who replied <strong>In</strong> on the Available tab are pre-selected and highlighted. Hold Ctrl (Windows/Linux) or Cmd (Mac) to change selection.</p>
 
       {% if schedule_players_unlocked %}
         <label for="players_extra">Additional players this week (not on list)</label>
