@@ -19,6 +19,7 @@ from scheduler import (
     format_schedule,
     DEFAULT_RATING,
     win_probability,
+    HISTORY_FILE as SCHEDULER_HISTORY_FILE,
 )
 
 app = Flask(__name__)
@@ -635,6 +636,59 @@ def rankings():
     return render_template("rankings.html", rankings=sorted_rankings, bios=bios)
 
 
+def _export_key_valid():
+    return request.args.get("key") == os.environ.get("EXPORT_SECRET")
+
+
+@app.route("/export/player_bios")
+def export_player_bios():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify(load_player_bios())
+
+
+@app.route("/export/rankings")
+def export_rankings():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify(load_rankings())
+
+
+@app.route("/export/players")
+def export_players():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify({"players": load_players_list()})
+
+
+@app.route("/export/match_history")
+def export_match_history():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    if not MATCH_HISTORY_FILE.exists():
+        return jsonify({"matches": []})
+    try:
+        with open(MATCH_HISTORY_FILE) as f:
+            data = json.load(f)
+        return jsonify(data)
+    except (json.JSONDecodeError, OSError):
+        return jsonify({"matches": []})
+
+
+@app.route("/export/play_history")
+def export_play_history():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    if not SCHEDULER_HISTORY_FILE.exists():
+        return jsonify({"with": {}, "against": {}})
+    try:
+        with open(SCHEDULER_HISTORY_FILE) as f:
+            data = json.load(f)
+        return jsonify(data)
+    except (json.JSONDecodeError, OSError):
+        return jsonify({"with": {}, "against": {}})
+
+
 @app.route("/history")
 def history():
     matches = load_match_history()
@@ -646,9 +700,8 @@ def reset_history():
     if request.form.get("reset_history_password", "").strip() != PLAYERS_PASSWORD:
         flash("Incorrect password. Use the players password to reset partner history.", "error")
         return redirect(url_for("index"))
-    from scheduler import HISTORY_FILE
-    if HISTORY_FILE.exists():
-        HISTORY_FILE.unlink()
+    if SCHEDULER_HISTORY_FILE.exists():
+        SCHEDULER_HISTORY_FILE.unlink()
     flash("Partner/opponent history reset. Rankings unchanged.", "success")
     return redirect(url_for("index"))
 

@@ -154,6 +154,31 @@ These are then read and written under that directory, so they survive code updat
 **Option B – Commit data to git**  
 You can commit the data files to the repo so they are pushed and pulled with your code: `players.json`, `player_bios.json`, `rankings.json`, `match_history.json`, `play_history.json`, etc. Then deploy as usual; the updated repo will include the latest data.
 
+### Backing up data from Render
+
+If you host on Render (or any ephemeral host) without a persistent disk, data changed on the live site is lost on the next deploy unless you pull it into the repo first. Use the export endpoints to backup before pushing new code.
+
+1. **On Render:** In your Web Service → **Environment**, add:
+   - **Key:** `EXPORT_SECRET`
+   - **Value:** a long random string (e.g. from a password generator). Do not commit this to git.
+   Redeploy once so the app has the new routes.
+
+2. **Before pushing when the site has new data:** From your machine, set your site URL and secret, then pull each JSON into the project directory (or run `./backup_from_render.sh` if you use the script):
+
+   ```bash
+   cd pickleball_scheduler
+   export RENDER_URL="https://YOUR-SERVICE-NAME.onrender.com"
+   export EXPORT_KEY="your-EXPORT_SECRET-value"
+
+   curl -s "$RENDER_URL/export/player_bios?key=$EXPORT_KEY" -o player_bios.json
+   curl -s "$RENDER_URL/export/rankings?key=$EXPORT_KEY" -o rankings.json
+   curl -s "$RENDER_URL/export/players?key=$EXPORT_KEY" -o players.json
+   curl -s "$RENDER_URL/export/match_history?key=$EXPORT_KEY" -o match_history.json
+   curl -s "$RENDER_URL/export/play_history?key=$EXPORT_KEY" -o play_history.json
+   ```
+
+   Then commit and push as usual. Treat the export URL and key like a password; anyone with the key can download your data.
+
 ## Summary
 
 | Step | You do | Command |
