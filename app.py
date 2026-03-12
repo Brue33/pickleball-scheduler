@@ -360,6 +360,8 @@ def slack_command():
         load_availability=load_availability,
         save_availability=save_availability,
         get_next_wednesday=get_next_wednesday,
+        load_published_schedule=load_published_schedule,
+        add_round_court_and_bye=add_round_court_and_bye,
     )
     return jsonify(response)
 

@@ -136,7 +136,6 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
     n = len(players)
     if n < 4:
         raise ValueError("Need at least 4 players.")
-    history = load_history()
     rankings = load_rankings()
     for p in players:
         if p not in rankings:
@@ -161,9 +160,6 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
         # Prefer even partner usage in this schedule: use pairs that have partnered fewer times
         penalty += partner_count_this.get(k_with, 0) * 120
         penalty += partner_count_this.get(k_with2, 0) * 120
-        # Keep with/against equal across time: penalize repeat partners from history
-        penalty += history["with"].get(k_with, 0) * 80
-        penalty += history["with"].get(k_with2, 0) * 80
         for a in team1:
             for b in team2:
                 penalty += used_opponent[a][b] * 50
@@ -188,8 +184,6 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
         scheduled.append((team1, team2))
         partner_count_this[pair_key(p1, p2)] += 1
         partner_count_this[pair_key(p3, p4)] += 1
-        history["with"][pair_key(p1, p2)] += 1
-        history["with"][pair_key(p3, p4)] += 1
         for a in team1:
             for b in team2:
                 used_opponent[a][b] += 1
@@ -229,7 +223,6 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
         t1, t2 = best
         add_pairing(t1, t2)
 
-    save_history(history)
     return scheduled, rankings
 
 

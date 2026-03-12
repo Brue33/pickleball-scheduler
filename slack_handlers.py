@@ -86,15 +86,37 @@ def handle_pb_history(load_match_history, limit=10):
     return {"response_type": "ephemeral", "text": "\n".join(lines)}
 
 
-def handle_pb_schedule(player_list, load_availability, get_next_wednesday):
-    """Show next Wednesday and who's in/out; hint for generating."""
+def handle_pb_schedule(player_list, load_availability, get_next_wednesday, load_published_schedule, add_round_court_and_bye):
+    """Show next Wednesday; if a schedule is published, show it. Otherwise who's in/out and hint for generating."""
     next_wed = get_next_wednesday()
     date_key = next_wed.isoformat()
+    published = load_published_schedule()
+    if published:
+        add_round_court_and_bye(published["schedule_entries"], published["players"])
+        lines = [f"*Schedule for {published.get('next_wednesday_display', next_wed.strftime('%A, %B %d'))}*"]
+        if published.get("time_location"):
+            lines.append(f"Time & location: {published['time_location']}")
+        lines.append(f"Players: {', '.join(published['players'])}")
+        current_round = None
+        for e in published["schedule_entries"]:
+            if e.get("round") != current_round:
+                current_round = e.get("round")
+                lines.append(f"\n*Round {current_round}*")
+            team1 = e.get("team1", [])
+            team2 = e.get("team2", [])
+            t1 = " & ".join(team1) if len(team1) == 2 else "—"
+            t2 = " & ".join(team2) if len(team2) == 2 else "—"
+            lines.append(f"  Court {e.get('court', 'A')}: {t1} vs {t2}")
+            if e.get("round_bye"):
+                lines.append(f"  Bye: {', '.join(e['round_bye'])}")
+        lines.append("\nRecord results from the *Schedule* tab on the web app.")
+        return {"response_type": "ephemeral", "text": "\n".join(lines)}
     availability_all = load_availability()
     availability = availability_all.get(date_key, {})
     in_count = sum(1 for p in player_list if availability.get(p) == "in")
     text = (
         f"*Next games: {next_wed.strftime('%A, %B %d')}*\n"
+        f"No schedule published yet for this week.\n"
         f"Who's in: {in_count} | Use `/pb-in YourName` or `/pb-out YourName` to update.\n"
         f"Use `/pb-availability` to see the full list.\n"
         f"Generate the schedule from the *Generate* tab on the web app (password required)."
@@ -122,5 +144,11 @@ def handle_slack_command(command, text, **kwargs):
                 pass
         return handle_pb_history(kwargs["load_match_history"], limit=n or 10)
     if cmd == "/pb-schedule":
-        return handle_pb_schedule(kwargs["player_list"], kwargs["load_availability"], kwargs["get_next_wednesday"])
+        return handle_pb_schedule(
+            kwargs["player_list"],
+            kwargs["load_availability"],
+            kwargs["get_next_wednesday"],
+            kwargs["load_published_schedule"],
+            kwargs["add_round_court_and_bye"],
+        )
     return {"response_type": "ephemeral", "text": f"Unknown command: {command}. Use `/pb-schedule`, `/pb-in`, `/pb-out`, `/pb-availability`, `/pb-rankings`, or `/pb-history`."}
