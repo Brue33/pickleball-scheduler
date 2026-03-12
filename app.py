@@ -193,7 +193,7 @@ def load_published_schedule():
         return None
 
 
-def save_published_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings):
+def save_published_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings, time_location=""):
     """Save the generated schedule so the Schedule tab can show it (public view)."""
     data = {
         "date_key": date_key,
@@ -201,6 +201,7 @@ def save_published_schedule(date_key, next_wednesday_display, players, schedule_
         "players": list(players),
         "schedule_entries": schedule_entries,
         "rankings": dict(rankings),
+        "time_location": (time_location or "").strip(),
     }
     with open(PUBLISHED_SCHEDULE_FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -222,7 +223,7 @@ def load_draft_schedule():
         return None
 
 
-def save_draft_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings):
+def save_draft_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings, time_location=""):
     """Save draft schedule (preview on Generate tab until Publish)."""
     data = {
         "date_key": date_key,
@@ -230,6 +231,7 @@ def save_draft_schedule(date_key, next_wednesday_display, players, schedule_entr
         "players": list(players),
         "schedule_entries": schedule_entries,
         "rankings": dict(rankings),
+        "time_location": (time_location or "").strip(),
     }
     with open(DRAFT_SCHEDULE_FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -489,6 +491,7 @@ def generate():
     selected = request.form.getlist("selected_players")
     players_extra = request.form.get("players_extra", "").strip() if session.get("schedule_players_unlocked") else ""
     games_str = request.form.get("games", "").strip()
+    time_location = request.form.get("time_location", "").strip()
 
     players = [p.strip() for p in selected if p and p.strip()]
     if players_extra:
@@ -538,6 +541,7 @@ def generate():
             players,
             schedule_entries,
             rankings,
+            time_location=time_location,
         )
         flash("Schedule generated. Review it below and click Publish when ready to go live.", "success")
         return redirect(url_for("generate"))
@@ -566,12 +570,14 @@ def generate_publish():
         schedule_entries = entries
     else:
         schedule_entries = draft["schedule_entries"]
+    time_location = request.form.get("time_location", "").strip() or draft.get("time_location", "")
     save_published_schedule(
         draft["date_key"],
         draft["next_wednesday_display"],
         draft["players"],
         schedule_entries,
         draft["rankings"],
+        time_location=time_location,
     )
     clear_draft_schedule()
     flash("Schedule is now live on the Schedule tab.", "success")
@@ -593,12 +599,14 @@ def generate_save_draft():
         flash(err, "error")
         return redirect(url_for("generate"))
     add_round_court_and_bye(entries, draft["players"])
+    time_location = request.form.get("time_location", "").strip() or draft.get("time_location", "")
     save_draft_schedule(
         draft["date_key"],
         draft["next_wednesday_display"],
         draft["players"],
         entries,
         draft["rankings"],
+        time_location=time_location,
     )
     flash("Draft saved. You can keep editing or Publish when ready.", "success")
     return redirect(url_for("generate"))

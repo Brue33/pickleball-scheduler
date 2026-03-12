@@ -6,6 +6,9 @@
   {% if published_schedule %}
     <h2 style="font-size: 1.1rem;">This week's published schedule</h2>
     <p style="color: var(--muted); font-size: 0.9rem;">{{ published_schedule.next_wednesday_display }} — {{ published_schedule.players|join(", ") }}</p>
+    {% if published_schedule.get('time_location') %}
+    <p style="color: var(--muted); font-size: 0.9rem;"><strong>Time &amp; location:</strong> {{ published_schedule.time_location }}</p>
+    {% endif %}
     <table>
       <thead>
         <tr>
