@@ -9,6 +9,9 @@
     <h2 style="font-size: 1.1rem;">Draft schedule — not yet live</h2>
     <p style="color: var(--muted); font-size: 0.9rem;">{{ draft_schedule.next_wednesday_display }} — {{ draft_schedule.players|join(", ") }}</p>
     <p style="color: var(--muted); font-size: 0.9rem;">Edit any match using the dropdowns, then Save draft or Publish.</p>
+    <p style="margin-bottom: 0.75rem;">
+      <button type="button" id="schedule-difficulty-btn" class="btn btn-secondary">Review schedule: hardest to easiest</button>
+    </p>
     <form method="post" action="{{ url_for('generate_save_draft') }}" id="draft-form">
       <p style="margin-bottom: 0.75rem;">
         <label for="time_location">Time &amp; location (optional)</label>
@@ -80,6 +83,20 @@
       </form>
       — Clear draft and change players or options, then generate again.
     </p>
+
+    <div id="schedule-difficulty-modal" class="rating-gain-modal" hidden aria-hidden="true">
+      <div class="rating-gain-backdrop" aria-label="Close"></div>
+      <div class="rating-gain-content">
+        <h3 class="rating-gain-title">Schedule: hardest to easiest</h3>
+        <p style="color: var(--muted); font-size: 0.9rem;">Based on average win chance in your matches this week. Hardest = lowest avg win %.</p>
+        <ol style="margin: 1rem 0 0 1.25rem; padding: 0;">
+          {% for player, avg_pct in schedule_difficulty %}
+          <li style="margin-bottom: 0.35rem;"><strong>{{ player }}</strong> ({{ avg_pct }}% avg win chance)</li>
+          {% endfor %}
+        </ol>
+        <button type="button" class="schedule-difficulty-close btn btn-secondary" style="margin-top: 1rem;">Close</button>
+      </div>
+    </div>
   {% elif not player_list %}
     <p><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
   {% else %}
@@ -111,5 +128,63 @@
         <button type="submit" class="btn-secondary" style="margin-top: 0;">Unlock additional players</button>
       </form>
     {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block head %}
+  {% if draft_schedule %}
+  <style>
+    .rating-gain-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .rating-gain-modal[hidden] { display: none; }
+    .rating-gain-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      cursor: pointer;
+    }
+    .rating-gain-content {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      max-width: 32rem;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+    .rating-gain-title { margin: 0 0 0.75rem 0; font-size: 1.25rem; }
+  </style>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var difficultyBtn = document.getElementById('schedule-difficulty-btn');
+      var difficultyModal = document.getElementById('schedule-difficulty-modal');
+      var difficultyBackdrop = difficultyModal && difficultyModal.querySelector('.rating-gain-backdrop');
+      var difficultyClose = difficultyModal && difficultyModal.querySelector('.schedule-difficulty-close');
+      function showDifficultyModal() {
+        if (!difficultyModal) return;
+        difficultyModal.hidden = false;
+        difficultyModal.setAttribute('aria-hidden', 'false');
+      }
+      function hideDifficultyModal() {
+        if (!difficultyModal) return;
+        difficultyModal.hidden = true;
+        difficultyModal.setAttribute('aria-hidden', 'true');
+      }
+      if (difficultyBtn) difficultyBtn.addEventListener('click', showDifficultyModal);
+      if (difficultyBackdrop) difficultyBackdrop.addEventListener('click', hideDifficultyModal);
+      if (difficultyClose) difficultyClose.addEventListener('click', hideDifficultyModal);
+      if (difficultyModal) difficultyModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideDifficultyModal(); });
+    });
+  </script>
   {% endif %}
 {% endblock %}

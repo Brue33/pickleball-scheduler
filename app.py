@@ -531,8 +531,26 @@ def generate():
         availability = availability_all.get(date_key, {})
         players_in = [p for p in player_list if availability.get(p) == "in"]
         draft = load_draft_schedule()
+        schedule_difficulty = []
         if draft:
             add_round_court_and_bye(draft["schedule_entries"], draft["players"])
+            player_win_probs = {p: [] for p in draft["players"]}
+            for e in draft["schedule_entries"]:
+                prob = e.get("prob")
+                if prob is None:
+                    prob = 0.5
+                prob = float(prob)
+                for p in e.get("team1", []):
+                    if p in player_win_probs:
+                        player_win_probs[p].append(prob)
+                for p in e.get("team2", []):
+                    if p in player_win_probs:
+                        player_win_probs[p].append(1 - prob)
+            for p in draft["players"]:
+                probs = player_win_probs.get(p, [])
+                avg = sum(probs) / len(probs) * 100 if probs else 50.0
+                schedule_difficulty.append((p, round(avg)))
+            schedule_difficulty.sort(key=lambda x: x[1])
         return render_template(
             "generate.html",
             player_list=player_list,
@@ -540,6 +558,7 @@ def generate():
             schedule_players_unlocked=schedule_players_unlocked,
             players_in=players_in,
             draft_schedule=draft,
+            schedule_difficulty=schedule_difficulty,
         )
 
     # POST: generate schedule (already authenticated)
