@@ -9,9 +9,16 @@ import json
 import argparse
 import sys
 import os
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from itertools import combinations
 from collections import defaultdict
+
+
+def round_half_up(x, decimals=0):
+    """Round to decimals place; 0.5 rounds up, 0.4 rounds down."""
+    d = Decimal(str(x))
+    return float(d.quantize(Decimal(10) ** -decimals, rounding=ROUND_HALF_UP))
 
 DEFAULT_RATING = 1300
 K_FACTOR = 32
@@ -117,9 +124,9 @@ def update_rankings_for_match(rankings, team1, team2, winner, score_team1=None, 
     delta1 = k * (s1 - e1) / 2
     delta2 = k * (s2 - e2) / 2
     for p in team1:
-        ratings[p] = round(ratings[p] + delta1, 1)
+        ratings[p] = round_half_up(ratings[p] + delta1, 0)
     for p in team2:
-        ratings[p] = round(ratings[p] + delta2, 1)
+        ratings[p] = round_half_up(ratings[p] + delta2, 0)
     save_rankings(ratings)
     return ratings
 

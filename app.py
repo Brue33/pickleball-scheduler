@@ -378,6 +378,9 @@ def schedule():
         add_round_court_and_bye(published["schedule_entries"], published["players"])
         for e in published["schedule_entries"]:
             prob = e.get("prob", 0.5)
+            if prob is None:
+                prob = 0.5
+            prob = float(prob)
             schedule_rating_data.append({
                 "round": e.get("round", 1),
                 "court": e.get("court", "A"),
