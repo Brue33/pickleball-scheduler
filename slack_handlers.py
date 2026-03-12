@@ -128,8 +128,12 @@ def handle_slack_command(command, text, **kwargs):
     """Dispatch by command and return Slack JSON response body."""
     cmd = (command or "").strip().lower()
     if cmd == "/pb-in":
+        if kwargs["load_published_schedule"]():
+            return {"response_type": "ephemeral", "text": "Schedule already published. Reach out to Bryan."}
         return handle_pb_in(text, kwargs["player_list"], kwargs["load_availability"], kwargs["save_availability"], kwargs["get_next_wednesday"])
     if cmd == "/pb-out":
+        if kwargs["load_published_schedule"]():
+            return {"response_type": "ephemeral", "text": "Schedule already published. Reach out to Bryan."}
         return handle_pb_out(text, kwargs["player_list"], kwargs["load_availability"], kwargs["save_availability"], kwargs["get_next_wednesday"])
     if cmd == "/pb-availability":
         return handle_pb_availability(kwargs["player_list"], kwargs["load_availability"], kwargs["get_next_wednesday"])
