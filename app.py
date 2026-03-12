@@ -374,6 +374,7 @@ def schedule():
     next_wed_str = next_wed.strftime("%A, %B %d, %Y")
     published = load_published_schedule()
     schedule_rating_data = []
+    schedule_difficulty = []
     if published:
         add_round_court_and_bye(published["schedule_entries"], published["players"])
         for e in published["schedule_entries"]:
@@ -389,6 +390,24 @@ def schedule():
                 "team1_gain": min_score_rating_gain(prob),
                 "team2_gain": min_score_rating_gain(1 - prob),
             })
+        # Per-player average win chance (lower = harder schedule). Sort hardest to easiest.
+        player_win_probs = {p: [] for p in published["players"]}
+        for e in published["schedule_entries"]:
+            prob = e.get("prob")
+            if prob is None:
+                prob = 0.5
+            prob = float(prob)
+            for p in e.get("team1", []):
+                if p in player_win_probs:
+                    player_win_probs[p].append(prob)
+            for p in e.get("team2", []):
+                if p in player_win_probs:
+                    player_win_probs[p].append(1 - prob)
+        for p in published["players"]:
+            probs = player_win_probs.get(p, [])
+            avg = sum(probs) / len(probs) * 100 if probs else 50.0
+            schedule_difficulty.append((p, round(avg)))
+        schedule_difficulty.sort(key=lambda x: x[1])  # ascending: hardest (lowest %) first
     return render_template(
         "schedule.html",
         rankings=rankings,
@@ -396,6 +415,7 @@ def schedule():
         next_wednesday=next_wed_str,
         published_schedule=published,
         schedule_rating_data=schedule_rating_data,
+        schedule_difficulty=schedule_difficulty,
     )
 
 

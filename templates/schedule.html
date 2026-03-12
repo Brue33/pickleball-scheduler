@@ -11,6 +11,7 @@
     {% endif %}
     <p style="margin-bottom: 0.75rem;">
       <button type="button" id="rating-gain-btn" class="btn btn-secondary">What score do I need to gain rating?</button>
+      <button type="button" id="schedule-difficulty-btn" class="btn btn-secondary" style="margin-left: 0.5rem;">Review schedule: hardest to easiest</button>
     </p>
     <table>
       <thead>
@@ -53,6 +54,20 @@
       </div>
     </div>
     <script type="application/json" id="schedule-rating-data">{{ schedule_rating_data|tojson }}</script>
+
+    <div id="schedule-difficulty-modal" class="rating-gain-modal" hidden aria-hidden="true">
+      <div class="rating-gain-backdrop" aria-label="Close"></div>
+      <div class="rating-gain-content">
+        <h3 class="rating-gain-title">Schedule: hardest to easiest</h3>
+        <p style="color: var(--muted); font-size: 0.9rem;">Based on average win chance in your matches this week. Hardest = lowest avg win %.</p>
+        <ol style="margin: 1rem 0 0 1.25rem; padding: 0;">
+          {% for player, avg_pct in schedule_difficulty %}
+          <li style="margin-bottom: 0.35rem;"><strong>{{ player }}</strong> ({{ avg_pct }}% avg win chance)</li>
+          {% endfor %}
+        </ol>
+        <button type="button" class="schedule-difficulty-close btn btn-secondary" style="margin-top: 1rem;">Close</button>
+      </div>
+    </div>
   {% else %}
     <p style="color: var(--muted); font-size: 0.9rem;">No schedule published yet for this week. Use the <a href="{{ url_for('generate') }}">Generate</a> tab (password required) to create one.</p>
   {% endif %}
@@ -168,6 +183,25 @@
       if (backdrop) backdrop.addEventListener('click', hideModal);
       if (closeBtn) closeBtn.addEventListener('click', hideModal);
       if (modal) modal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideModal(); });
+
+      var difficultyBtn = document.getElementById('schedule-difficulty-btn');
+      var difficultyModal = document.getElementById('schedule-difficulty-modal');
+      var difficultyBackdrop = difficultyModal && difficultyModal.querySelector('.rating-gain-backdrop');
+      var difficultyClose = difficultyModal && difficultyModal.querySelector('.schedule-difficulty-close');
+      function showDifficultyModal() {
+        if (!difficultyModal) return;
+        difficultyModal.hidden = false;
+        difficultyModal.setAttribute('aria-hidden', 'false');
+      }
+      function hideDifficultyModal() {
+        if (!difficultyModal) return;
+        difficultyModal.hidden = true;
+        difficultyModal.setAttribute('aria-hidden', 'true');
+      }
+      if (difficultyBtn) difficultyBtn.addEventListener('click', showDifficultyModal);
+      if (difficultyBackdrop) difficultyBackdrop.addEventListener('click', hideDifficultyModal);
+      if (difficultyClose) difficultyClose.addEventListener('click', hideDifficultyModal);
+      if (difficultyModal) difficultyModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideDifficultyModal(); });
     });
   </script>
   {% endif %}
