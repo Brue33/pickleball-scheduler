@@ -17,7 +17,7 @@
       <tbody>
         {% for m in matches %}
           <tr>
-            <td>{{ m.date[:10] if m.date else "—" }}</td>
+            <td>{{ m.date|date_long_month_short_year }}</td>
             <td>{{ m.team1[0] }} & {{ m.team1[1] }}</td>
             <td>{{ m.team2[0] }} & {{ m.team2[1] }}</td>
             <td>{% if 'score_team1' in m and 'score_team2' in m %}{{ m.score_team1 }}–{{ m.score_team2 }}{% else %}—{% endif %}</td>

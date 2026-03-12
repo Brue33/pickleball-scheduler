@@ -4,14 +4,14 @@
   <h1>Mitten Smash Pickleball</h1>
   <p>Welcome to Mitten Smash, a friendly pickleball league. We officially play one day a week in doubles, rotating partners and opponents as much as possible. Rankings are calculated per person, but every point matters!</p>
   <p>On Slack you can reach out to coordinate more games with others.</p>
-  <p><strong>Next game:</strong> {{ next_wednesday }}</p>
+  <p><strong>Next game:</strong> {{ next_game_location_time }}, {{ next_game_date_display }}</p>
   <ul>
     <li><a href="{{ url_for('schedule') }}">Schedule</a> — This week's published schedule.</li>
     <li><a href="{{ url_for('availability') }}">Availability</a> — Mark yourself in or out for next Wednesday.</li>
-    <li><a href="{{ url_for('generate') }}">Generate</a> — Create this week’s games (password required).</li>
-    <li><a href="{{ url_for('players') }}">Players</a> — Manage your player list (password protected).</li>
     <li><a href="{{ url_for('rankings') }}">Rankings</a> — View current ratings (Elo-style).</li>
     <li><a href="{{ url_for('history') }}">Past games</a> — Review all finished match outcomes.</li>
+    <li><a href="{{ url_for('generate') }}">Generate</a> — Create this week's games (password required).</li>
+    <li><a href="{{ url_for('players') }}">Players</a> — Manage your player list (password protected).</li>
   </ul>
   <form method="post" action="{{ url_for('reset_history') }}" style="margin-top: 1.5rem;" onsubmit="return confirm('Reset partner/opponent history? Rankings will not change.');">
     <label for="reset_history_password">Password (required to reset)</label>

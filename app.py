@@ -161,6 +161,16 @@ def get_next_wednesday():
     return today + timedelta(days=days_ahead)
 
 
+def _ordinal_day(d):
+    """Return day with ordinal suffix, e.g. 18 -> '18th', 1 -> '1st'."""
+    n = d.day
+    if 10 <= n % 100 <= 20:
+        suf = "th"
+    else:
+        suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return str(n) + suf
+
+
 def load_availability():
     """Load availability by date: { 'YYYY-MM-DD': { 'PlayerName': 'in'|'out' } }."""
     if not AVAILABILITY_FILE.exists():
@@ -311,8 +321,15 @@ def add_round_court_and_bye(schedule_entries, players):
 def index():
     rankings = load_rankings()
     next_wed = get_next_wednesday()
-    next_wed_str = next_wed.strftime("%A, %B %d, %Y")
-    return render_template("index.html", rankings=rankings, next_wednesday=next_wed_str)
+    next_game_date_display = next_wed.strftime("%A, %B ") + _ordinal_day(next_wed)
+    published = load_published_schedule()
+    next_game_location_time = (published.get("time_location") or "").strip() or "Green Lake, 6:30pm"
+    return render_template(
+        "index.html",
+        rankings=rankings,
+        next_game_date_display=next_game_date_display,
+        next_game_location_time=next_game_location_time,
+    )
 
 
 @app.route("/slack/command", methods=["POST"])
@@ -905,6 +922,21 @@ def export_published_schedule():
         return jsonify(data)
     except (json.JSONDecodeError, OSError):
         return jsonify({})
+
+
+@app.template_filter("date_long_month_short_year")
+def date_long_month_short_year(value):
+    """Format an ISO date string as 'Long Month Day Short Year', e.g. March 12 26."""
+    if not value:
+        return "—"
+    s = (value[:10] if isinstance(value, str) else str(value)[:10]).strip()
+    if len(s) != 10:
+        return value if isinstance(value, str) else "—"
+    try:
+        d = datetime.strptime(s, "%Y-%m-%d").date()
+        return d.strftime("%B ") + str(d.day) + d.strftime(" %y")
+    except (ValueError, TypeError):
+        return s
 
 
 @app.route("/history")
