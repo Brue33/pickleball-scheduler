@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Generate — Log in{% endblock %}
+{% block content %}
+  <h1>Generate</h1>
+  <p>Enter the schedule password to create and publish schedules.</p>
+  <form method="post" action="{{ url_for('generate_login') }}">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" autofocus>
+    <button type="submit">Log in</button>
+  </form>
+{% endblock %}

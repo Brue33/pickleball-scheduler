@@ -2,7 +2,8 @@
 {% block title %}Generate schedule{% endblock %}
 {% block content %}
   <h1>Generate schedule</h1>
-  <p style="color: var(--muted); font-size: 0.9rem;">For {{ next_wednesday }}. Select who is playing (4+ players; byes used when odd). Password required.</p>
+  <p style="color: var(--muted); font-size: 0.9rem;">For {{ next_wednesday }}. Select who is playing (4+ players; byes used when odd).</p>
+  <p style="margin-top: 0;"><a href="{{ url_for('generate_logout') }}">Log out</a></p>
 
   {% if draft_schedule %}
     <h2 style="font-size: 1.1rem;">Draft schedule — not yet live</h2>
@@ -94,8 +95,6 @@
 
       <label for="games">Number of games (optional)</label>
       <input type="number" id="games" name="games" min="1" max="32" placeholder="e.g. 8">
-      <label for="schedule_password">Schedule password (required to generate)</label>
-      <input type="password" id="schedule_password" name="schedule_password" placeholder="Password" style="max-width: 14rem;">
       <button type="submit">Generate schedule</button>
     </form>
 

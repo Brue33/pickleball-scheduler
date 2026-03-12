@@ -5,15 +5,17 @@
   {% if rankings %}
     <table>
       <thead>
-        <tr><th>Player</th><th>Rating</th></tr>
+        <tr><th>Player</th><th>Rating</th><th>W–L</th></tr>
       </thead>
       <tbody>
         {% for player, rating in rankings %}
+          {% set wl = wins_losses.get(player, {'wins': 0, 'losses': 0}) %}
           <tr>
             <td>
               <button type="button" class="player-name-btn" data-player="{{ player|e }}" data-bio="{{ (bios.get(player, '') or '')|e|replace('\n', '&#10;') }}">{{ player }}</button>
             </td>
             <td>{{ rating }}</td>
+            <td>{{ wl.wins }}–{{ wl.losses }}</td>
           </tr>
         {% endfor %}
       </tbody>

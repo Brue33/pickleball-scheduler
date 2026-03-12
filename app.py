@@ -104,6 +104,30 @@ def load_match_history():
         return []
 
 
+def get_wins_losses_by_player():
+    """Return dict of player -> {'wins': int, 'losses': int} from match history."""
+    matches = load_match_history()
+    wins = {}
+    losses = {}
+    for m in matches:
+        team1 = m.get("team1") or []
+        team2 = m.get("team2") or []
+        winner = m.get("winner")
+        if winner == 1:
+            winning_team, losing_team = team1, team2
+        elif winner == 2:
+            winning_team, losing_team = team2, team1
+        else:
+            continue
+        for p in winning_team:
+            if p:
+                wins[p] = wins.get(p, 0) + 1
+        for p in losing_team:
+            if p:
+                losses[p] = losses.get(p, 0) + 1
+    return {p: {"wins": wins.get(p, 0), "losses": losses.get(p, 0)} for p in set(wins) | set(losses)}
+
+
 def append_match(team1, team2, winner, score_team1=None, score_team2=None):
     """Append one match to history."""
     matches = []
@@ -414,9 +438,32 @@ def schedule_record_results():
     )
 
 
+@app.route("/generate/login", methods=["GET", "POST"])
+def generate_login():
+    """Log in to access the Generate tab (schedule password)."""
+    if request.method == "POST":
+        if request.form.get("password") == SCHEDULE_PASSWORD:
+            session["schedule_authenticated"] = True
+            return redirect(url_for("generate"))
+        flash("Incorrect password.", "error")
+    return render_template("generate_login.html")
+
+
+@app.route("/generate/logout")
+def generate_logout():
+    session.pop("schedule_authenticated", None)
+    return redirect(url_for("index"))
+
+
 @app.route("/generate", methods=["GET", "POST"])
 def generate():
-    """Generate schedule (password protected). Saves as draft; Publish makes it live on Schedule tab."""
+    """Generate schedule. Requires schedule login; saves as draft; Publish makes it live on Schedule tab."""
+    if not session.get("schedule_authenticated"):
+        if request.method == "GET":
+            return redirect(url_for("generate_login"))
+        flash("Please log in to the Generate tab first.", "error")
+        return redirect(url_for("generate_login"))
+
     next_wed = get_next_wednesday()
     date_key = next_wed.isoformat()
 
@@ -438,12 +485,7 @@ def generate():
             draft_schedule=draft,
         )
 
-    # POST: generate schedule (requires schedule password)
-    schedule_password = request.form.get("schedule_password", "").strip()
-    if schedule_password != SCHEDULE_PASSWORD:
-        flash("Invalid schedule password. Use the correct password to generate.", "error")
-        return redirect(url_for("generate"))
-
+    # POST: generate schedule (already authenticated)
     selected = request.form.getlist("selected_players")
     players_extra = request.form.get("players_extra", "").strip() if session.get("schedule_players_unlocked") else ""
     games_str = request.form.get("games", "").strip()
@@ -507,6 +549,9 @@ def generate():
 @app.route("/generate/publish", methods=["POST"])
 def generate_publish():
     """Publish the draft schedule (optionally with edits from form) so it appears on the Schedule tab."""
+    if not session.get("schedule_authenticated"):
+        flash("Please log in to the Generate tab first.", "error")
+        return redirect(url_for("generate_login"))
     draft = load_draft_schedule()
     if not draft:
         flash("No draft schedule to publish. Generate a schedule first.", "error")
@@ -536,6 +581,9 @@ def generate_publish():
 @app.route("/generate/save-draft", methods=["POST"])
 def generate_save_draft():
     """Save edited draft schedule from form."""
+    if not session.get("schedule_authenticated"):
+        flash("Please log in to the Generate tab first.", "error")
+        return redirect(url_for("generate_login"))
     draft = load_draft_schedule()
     if not draft:
         flash("No draft schedule to save. Generate a schedule first.", "error")
@@ -559,6 +607,9 @@ def generate_save_draft():
 @app.route("/generate/regenerate", methods=["GET", "POST"])
 def generate_regenerate():
     """Clear the draft and show the generate form again."""
+    if not session.get("schedule_authenticated"):
+        flash("Please log in to the Generate tab first.", "error")
+        return redirect(url_for("generate_login"))
     clear_draft_schedule()
     flash("Draft cleared. Change players or options and generate again.", "success")
     return redirect(url_for("generate"))
@@ -770,7 +821,8 @@ def rankings():
         rankings.items(), key=lambda x: -x[1]
     ) if rankings else []
     bios = load_player_bios()
-    return render_template("rankings.html", rankings=sorted_rankings, bios=bios)
+    wins_losses = get_wins_losses_by_player()
+    return render_template("rankings.html", rankings=sorted_rankings, bios=bios, wins_losses=wins_losses)
 
 
 def _export_key_valid():
