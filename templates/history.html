@@ -3,7 +3,23 @@
 {% block content %}
   <h1>Past games</h1>
   <p>All recorded match outcomes (newest first).</p>
+  {% if not history_edit_authenticated %}
+    <form method="post" action="{{ url_for('history_unlock') }}" style="margin-bottom: 1rem;">
+      <label for="history_password">Password to edit scores</label>
+      <input type="password" id="history_password" name="password" placeholder="Password" style="max-width: 12rem; margin-right: 0.5rem;">
+      <button type="submit" class="btn btn-secondary">Unlock to edit scores</button>
+    </form>
+  {% else %}
+    <p style="margin-bottom: 1rem;"><a href="{{ url_for('history_lock') }}">Lock</a> — Score editing is unlocked.</p>
+  {% endif %}
   {% if matches %}
+    <style>
+      .upset-win { background: rgba(63, 185, 80, 0.25); font-weight: 600; }
+      input.score-edit { width: 3rem; text-align: center; }
+    </style>
+    {% if history_edit_authenticated %}
+    <form method="post" action="{{ url_for('history_save') }}" id="history-save-form">
+    {% endif %}
     <table>
       <thead>
         <tr>
@@ -18,14 +34,24 @@
         {% for m in matches %}
           <tr>
             <td>{{ m.date|date_long_month_short_year }}</td>
-            <td>{{ m.team1[0] }} & {{ m.team1[1] }}</td>
-            <td>{{ m.team2[0] }} & {{ m.team2[1] }}</td>
-            <td>{% if 'score_team1' in m and 'score_team2' in m %}{{ m.score_team1 }}–{{ m.score_team2 }}{% else %}—{% endif %}</td>
+            <td class="{% if m.winner == 1 and m.upset %}upset-win{% endif %}">{{ m.team1[0] }} & {{ m.team1[1] }}</td>
+            <td class="{% if m.winner == 2 and m.upset %}upset-win{% endif %}">{{ m.team2[0] }} & {{ m.team2[1] }}</td>
+            <td>
+              {% if history_edit_authenticated %}
+                <input type="number" name="score_team1_{{ loop.index0 }}" value="{{ m.get('score_team1', '') }}" min="0" class="score-edit" placeholder="—"> – <input type="number" name="score_team2_{{ loop.index0 }}" value="{{ m.get('score_team2', '') }}" min="0" class="score-edit" placeholder="—">
+              {% else %}
+                {% if 'score_team1' in m and 'score_team2' in m %}{{ m.score_team1 }}–{{ m.score_team2 }}{% else %}—{% endif %}
+              {% endif %}
+            </td>
             <td>{% if m.winner == 1 %}Team 1{% else %}Team 2{% endif %}</td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
+    {% if history_edit_authenticated %}
+      <p style="margin-top: 0.75rem;"><button type="submit" class="btn">Save score changes</button></p>
+    </form>
+    {% endif %}
   {% else %}
     <p>No matches recorded yet. Record results from the <a href="{{ url_for('schedule') }}">Schedule</a> page after playing games.</p>
   {% endif %}

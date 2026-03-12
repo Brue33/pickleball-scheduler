@@ -104,6 +104,13 @@ def load_match_history():
         return []
 
 
+def save_match_history(matches_newest_first):
+    """Save match history. matches_newest_first is list in display order (newest first)."""
+    stored = list(reversed(matches_newest_first))
+    with open(MATCH_HISTORY_FILE, "w") as f:
+        json.dump({"matches": stored}, f, indent=2)
+
+
 def get_wins_losses_by_player():
     """Return dict of player -> {'wins': int, 'losses': int} from match history."""
     matches = load_match_history()
@@ -128,8 +135,8 @@ def get_wins_losses_by_player():
     return {p: {"wins": wins.get(p, 0), "losses": losses.get(p, 0)} for p in set(wins) | set(losses)}
 
 
-def append_match(team1, team2, winner, score_team1=None, score_team2=None):
-    """Append one match to history."""
+def append_match(team1, team2, winner, score_team1=None, score_team2=None, prob_team1=None):
+    """Append one match to history. prob_team1 is Team 1 win probability before the match (for upset detection)."""
     matches = []
     if MATCH_HISTORY_FILE.exists():
         try:
@@ -147,6 +154,8 @@ def append_match(team1, team2, winner, score_team1=None, score_team2=None):
     if score_team1 is not None and score_team2 is not None:
         record["score_team1"] = score_team1
         record["score_team2"] = score_team2
+    if prob_team1 is not None:
+        record["prob_team1"] = round(prob_team1, 4)
     matches.append(record)
     with open(MATCH_HISTORY_FILE, "w") as f:
         json.dump({"matches": matches}, f, indent=2)
@@ -666,8 +675,12 @@ def schedule_results():
                     s2 = int(score_t2)
                 except ValueError:
                     pass
+            rankings = load_rankings()
+            r1 = tuple(rankings.get(p, DEFAULT_RATING) for p in team1)
+            r2 = tuple(rankings.get(p, DEFAULT_RATING) for p in team2)
+            prob_team1 = win_probability(r1, r2)
             update_rankings_for_match(None, team1, team2, int(winner), s1, s2)
-            append_match(team1, team2, int(winner), s1, s2)
+            append_match(team1, team2, int(winner), s1, s2, prob_team1=prob_team1)
             count += 1
         i += 1
     if count > 0:
@@ -812,8 +825,12 @@ def results():
         if t1_0 and t1_1 and t2_0 and t2_1 and winner and winner in ("1", "2"):
             team1 = (t1_0.strip(), t1_1.strip())
             team2 = (t2_0.strip(), t2_1.strip())
+            rankings = load_rankings()
+            r1 = tuple(rankings.get(p, DEFAULT_RATING) for p in team1)
+            r2 = tuple(rankings.get(p, DEFAULT_RATING) for p in team2)
+            prob_team1 = win_probability(r1, r2)
             update_rankings_for_match(None, team1, team2, int(winner))
-            append_match(team1, team2, int(winner))
+            append_match(team1, team2, int(winner), prob_team1=prob_team1)
             count += 1
         i += 1
         if i > 50:
@@ -828,8 +845,12 @@ def results():
             if len(parts) >= 4:
                 team1 = (parts[0], parts[1])
                 team2 = (parts[2], parts[3])
+                rankings = load_rankings()
+                r1 = tuple(rankings.get(p, DEFAULT_RATING) for p in team1)
+                r2 = tuple(rankings.get(p, DEFAULT_RATING) for p in team2)
+                prob_team1 = win_probability(r1, r2)
                 update_rankings_for_match(None, team1, team2, int(winner))
-                append_match(team1, team2, int(winner))
+                append_match(team1, team2, int(winner), prob_team1=prob_team1)
                 count = 1
 
     if count > 0:
@@ -942,7 +963,55 @@ def date_long_month_short_year(value):
 @app.route("/history")
 def history():
     matches = load_match_history()
-    return render_template("history.html", matches=matches)
+    for m in matches:
+        prob = m.get("prob_team1")
+        if prob is not None:
+            m["upset"] = (m.get("winner") == 1 and prob < 0.5) or (m.get("winner") == 2 and prob > 0.5)
+        else:
+            m["upset"] = False
+    history_edit_authenticated = session.get("history_edit_authenticated", False)
+    return render_template("history.html", matches=matches, history_edit_authenticated=history_edit_authenticated)
+
+
+@app.route("/history/unlock", methods=["POST"])
+def history_unlock():
+    """Unlock score editing on Past games (schedule password)."""
+    if request.form.get("password", "").strip() == SCHEDULE_PASSWORD:
+        session["history_edit_authenticated"] = True
+        flash("You can now edit scores.", "success")
+    else:
+        flash("Incorrect password.", "error")
+    return redirect(url_for("history"))
+
+
+@app.route("/history/lock")
+def history_lock():
+    session.pop("history_edit_authenticated", None)
+    return redirect(url_for("history"))
+
+
+@app.route("/history/save", methods=["POST"])
+def history_save():
+    """Save edited scores for past games. Requires history unlock."""
+    if not session.get("history_edit_authenticated"):
+        flash("Unlock score editing first (password required).", "error")
+        return redirect(url_for("history"))
+    matches = load_match_history()
+    for i, m in enumerate(matches):
+        s1 = request.form.get(f"score_team1_{i}")
+        s2 = request.form.get(f"score_team2_{i}")
+        if s1 not in (None, "") and s2 not in (None, ""):
+            try:
+                m["score_team1"] = int(s1)
+                m["score_team2"] = int(s2)
+            except ValueError:
+                pass
+        else:
+            m.pop("score_team1", None)
+            m.pop("score_team2", None)
+    save_match_history(matches)
+    flash("Scores updated.", "success")
+    return redirect(url_for("history"))
 
 
 @app.route("/reset-history", methods=["POST"])
