@@ -97,74 +97,9 @@ def handle_pb_schedule(player_list, load_availability, get_next_wednesday):
         f"*Next games: {next_wed.strftime('%A, %B %d')}*\n"
         f"Who's in: {in_count} | Use `/pb-in YourName` or `/pb-out YourName` to update.\n"
         f"Use `/pb-availability` to see the full list.\n"
-        f"To *generate the schedule*, use `/pb-generate <schedule-password> [number-of-games]` (uses everyone marked in)."
+        f"Generate the schedule from the *Generate* tab on the web app (password required)."
     )
     return {"response_type": "ephemeral", "text": text}
-
-
-def handle_pb_generate(text, schedule_password, load_players_list, load_availability, get_next_wednesday, generate_schedule, format_schedule, save_published_schedule, win_probability, default_rating, add_round_court_and_bye):
-    """Generate schedule from who's marked in this week. Usage: /pb-generate <password> [number-of-games]"""
-    parts = (text or "").strip().split()
-    if len(parts) < 1:
-        return {"response_type": "ephemeral", "text": "Usage: `/pb-generate <schedule-password> [number-of-games]` — uses everyone marked *in* for this week."}
-    password = parts[0]
-    if password != schedule_password:
-        return {"response_type": "ephemeral", "text": "Invalid schedule password."}
-    games = None
-    if len(parts) >= 2:
-        try:
-            games = int(parts[1])
-            if games < 1:
-                games = None
-        except ValueError:
-            pass
-    player_list = load_players_list()
-    next_wed = get_next_wednesday()
-    date_key = next_wed.isoformat()
-    availability_all = load_availability()
-    availability = availability_all.get(date_key, {})
-    players_in = [p for p in player_list if availability.get(p) == "in"]
-    if len(players_in) < 4:
-        return {"response_type": "ephemeral", "text": f"Need at least 4 players marked *in*. Right now: {len(players_in)} — {', '.join(players_in) or 'none'}. Use `/pb-in YourName` to mark in."}
-    try:
-        schedule_list, rankings = generate_schedule(players_in, games_per_round=games)
-        lines = format_schedule(schedule_list, rankings, players=players_in)
-        schedule_entries = []
-        for i, (team1, team2) in enumerate(schedule_list, 1):
-            r1 = [rankings.get(p, default_rating) for p in team1]
-            r2 = [rankings.get(p, default_rating) for p in team2]
-            prob = win_probability(r1, r2)
-            playing = set(team1) | set(team2)
-            bye = sorted(set(players_in) - playing)
-            schedule_entries.append({
-                "game": i,
-                "team1": list(team1),
-                "team2": list(team2),
-                "line": lines[i - 1] if i <= len(lines) else "",
-                "prob": prob,
-                "bye": bye,
-            })
-        add_round_court_and_bye(schedule_entries, players_in)
-        save_published_schedule(
-            date_key,
-            next_wed.strftime("%A, %B %d, %Y"),
-            players_in,
-            schedule_entries,
-            rankings,
-        )
-        out = [f"*Schedule for {next_wed.strftime('%A, %B %d')}*"]
-        current_round = None
-        for e in schedule_entries:
-            if e.get("round") != current_round:
-                current_round = e.get("round")
-                out.append(f"\n*Round {current_round}*")
-            out.append(f"  Court {e.get('court', 'A')}: {e['team1'][0]} & {e['team1'][1]} vs {e['team2'][0]} & {e['team2'][1]}")
-            if e.get("round_bye"):
-                out.append(f"  Bye: {', '.join(e['round_bye'])}")
-        out.append("\nRecord results from the *Schedule* tab → Record results.")
-        return {"response_type": "in_channel", "text": "\n".join(out)}
-    except ValueError as e:
-        return {"response_type": "ephemeral", "text": str(e)}
 
 
 def handle_slack_command(command, text, **kwargs):
@@ -188,18 +123,4 @@ def handle_slack_command(command, text, **kwargs):
         return handle_pb_history(kwargs["load_match_history"], limit=n or 10)
     if cmd == "/pb-schedule":
         return handle_pb_schedule(kwargs["player_list"], kwargs["load_availability"], kwargs["get_next_wednesday"])
-    if cmd == "/pb-generate":
-        return handle_pb_generate(
-            text,
-            kwargs["schedule_password"],
-            kwargs["load_players_list"],
-            kwargs["load_availability"],
-            kwargs["get_next_wednesday"],
-            kwargs["generate_schedule"],
-            kwargs["format_schedule"],
-            kwargs["save_published_schedule"],
-            kwargs["win_probability"],
-            kwargs["default_rating"],
-            kwargs["add_round_court_and_bye"],
-        )
-    return {"response_type": "ephemeral", "text": f"Unknown command: {command}. Use `/pb-schedule`, `/pb-in`, `/pb-out`, `/pb-availability`, `/pb-rankings`, `/pb-history`, or `/pb-generate`."}
+    return {"response_type": "ephemeral", "text": f"Unknown command: {command}. Use `/pb-schedule`, `/pb-in`, `/pb-out`, `/pb-availability`, `/pb-rankings`, or `/pb-history`."}

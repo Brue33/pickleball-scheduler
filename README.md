@@ -35,9 +35,9 @@ python scheduler.py --help
 
 Run the scheduler from Slack with slash commands. Same data as the web app.
 
-**Setup:** Create an app at [api.slack.com/apps](https://api.slack.com/apps). Add Slash Commands `/pb-in`, `/pb-out`, `/pb-availability`, `/pb-rankings`, `/pb-history`, `/pb-schedule`, `/pb-generate` — all with Request URL `https://YOUR_DOMAIN/slack/command`. Set env var `SLACK_SIGNING_SECRET` (Signing Secret from the app). Deploy Flask so Slack can POST to `/slack/command`.
+**Setup:** Create an app at [api.slack.com/apps](https://api.slack.com/apps). Add Slash Commands `/pb-in`, `/pb-out`, `/pb-availability`, `/pb-rankings`, `/pb-history`, `/pb-schedule` — all with Request URL `https://YOUR_DOMAIN/slack/command`. Set env var `SLACK_SIGNING_SECRET` (Signing Secret from the app). Deploy Flask so Slack can POST to `/slack/command`.
 
-**Commands:** `/pb-in YourName`, `/pb-out YourName`, `/pb-availability`, `/pb-schedule`, `/pb-generate <password> P1 P2 P3 P4 ...`, `/pb-rankings`, `/pb-history [N]`. Record results from the web app.
+**Commands:** `/pb-in YourName`, `/pb-out YourName`, `/pb-availability`, `/pb-schedule`, `/pb-rankings`, `/pb-history [N]`. Generate the schedule from the web app (Generate tab). Record results from the web app.
 
 ## Weekly workflow
 

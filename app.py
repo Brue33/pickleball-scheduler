@@ -360,14 +360,6 @@ def slack_command():
         load_availability=load_availability,
         save_availability=save_availability,
         get_next_wednesday=get_next_wednesday,
-        schedule_password=SCHEDULE_PASSWORD,
-        load_players_list=load_players_list,
-        generate_schedule=generate_schedule,
-        format_schedule=format_schedule,
-        save_published_schedule=save_published_schedule,
-        win_probability=win_probability,
-        default_rating=DEFAULT_RATING,
-        add_round_court_and_bye=add_round_court_and_bye,
     )
     return jsonify(response)
 
