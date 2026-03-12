@@ -373,14 +373,26 @@ def schedule():
     next_wed = get_next_wednesday()
     next_wed_str = next_wed.strftime("%A, %B %d, %Y")
     published = load_published_schedule()
+    schedule_rating_data = []
     if published:
         add_round_court_and_bye(published["schedule_entries"], published["players"])
+        for e in published["schedule_entries"]:
+            prob = e.get("prob", 0.5)
+            schedule_rating_data.append({
+                "round": e.get("round", 1),
+                "court": e.get("court", "A"),
+                "team1": list(e.get("team1", [])),
+                "team2": list(e.get("team2", [])),
+                "team1_gain": min_score_rating_gain(prob),
+                "team2_gain": min_score_rating_gain(1 - prob),
+            })
     return render_template(
         "schedule.html",
         rankings=rankings,
         player_list=player_list,
         next_wednesday=next_wed_str,
         published_schedule=published,
+        schedule_rating_data=schedule_rating_data,
     )
 
 
@@ -937,6 +949,24 @@ def export_published_schedule():
         return jsonify(data)
     except (json.JSONDecodeError, OSError):
         return jsonify({})
+
+
+def min_score_rating_gain(prob):
+    """
+    Given expected score share (0-1), return min winning score for that team in 'to 11, win by 2' format.
+    E.g. '11-4 or better'. Team gains rating when actual share > prob.
+    """
+    if prob is None or prob >= 1.0:
+        return "11-0 or better"
+    if prob <= 0:
+        return "11-9 or better"
+    e1 = float(prob)
+    for t2 in range(9, -1, -1):
+        if 11 / (11 + t2) > e1:
+            return f"11-{t2} or better"
+    if 12 / 22 > e1:
+        return "12-10 or better"
+    return "13-11 or better"
 
 
 @app.template_filter("date_long_month_short_year")

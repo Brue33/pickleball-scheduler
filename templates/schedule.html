@@ -9,6 +9,9 @@
     {% if published_schedule.get('time_location') %}
     <p style="color: var(--muted); font-size: 0.9rem;"><strong>Time &amp; location:</strong> {{ published_schedule.time_location }}</p>
     {% endif %}
+    <p style="margin-bottom: 0.75rem;">
+      <button type="button" id="rating-gain-btn" class="btn btn-secondary">What score do I need to gain rating?</button>
+    </p>
     <table>
       <thead>
         <tr>
@@ -37,11 +40,135 @@
       <a href="{{ url_for('schedule_record_results') }}" class="btn">Record results</a>
       — Mark winners and scores, then save to update rankings.
     </p>
+
+    <div id="rating-gain-modal" class="rating-gain-modal" hidden aria-hidden="true">
+      <div class="rating-gain-backdrop" aria-label="Close"></div>
+      <div class="rating-gain-content">
+        <h3 class="rating-gain-title">What score do I need to gain rating?</h3>
+        <label for="rating-gain-name">Your name</label>
+        <input type="text" id="rating-gain-name" placeholder="e.g. Bryan R" style="max-width: 16rem; margin-bottom: 0.5rem;">
+        <button type="button" id="rating-gain-show" class="btn" style="margin-top: 0.25rem;">Show</button>
+        <div id="rating-gain-results" class="rating-gain-results"></div>
+        <button type="button" class="rating-gain-close btn btn-secondary" style="margin-top: 1rem;">Close</button>
+      </div>
+    </div>
+    <script type="application/json" id="schedule-rating-data">{{ schedule_rating_data|tojson }}</script>
   {% else %}
     <p style="color: var(--muted); font-size: 0.9rem;">No schedule published yet for this week. Use the <a href="{{ url_for('generate') }}">Generate</a> tab (password required) to create one.</p>
   {% endif %}
 
   {% if not player_list %}
     <p style="margin-top: 1rem;"><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
+  {% endif %}
+{% endblock %}
+
+{% block head %}
+  {% if published_schedule %}
+  <style>
+    .rating-gain-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .rating-gain-modal[hidden] { display: none; }
+    .rating-gain-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      cursor: pointer;
+    }
+    .rating-gain-content {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      max-width: 32rem;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+    .rating-gain-title { margin: 0 0 0.75rem 0; font-size: 1.25rem; }
+    .rating-gain-results {
+      margin-top: 1rem;
+      color: var(--text);
+    }
+    .rating-gain-results ul { margin: 0.5rem 0 0 0; padding-left: 1.25rem; }
+    .rating-gain-results li { margin-bottom: 0.5rem; }
+    .rating-gain-results .gain-line { font-weight: 600; color: var(--accent); }
+  </style>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var btn = document.getElementById('rating-gain-btn');
+      var modal = document.getElementById('rating-gain-modal');
+      var nameInput = document.getElementById('rating-gain-name');
+      var showBtn = document.getElementById('rating-gain-show');
+      var resultsEl = document.getElementById('rating-gain-results');
+      var backdrop = modal && modal.querySelector('.rating-gain-backdrop');
+      var closeBtn = modal && modal.querySelector('.rating-gain-close');
+      var dataEl = document.getElementById('schedule-rating-data');
+      var scheduleData = dataEl ? JSON.parse(dataEl.textContent || '[]') : [];
+
+      function normalizeName(s) { return (s || '').trim(); }
+      function nameMatches(a, b) { return normalizeName(a).toLowerCase() === normalizeName(b).toLowerCase(); }
+
+      function showModal() {
+        if (!modal) return;
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        nameInput.value = '';
+        resultsEl.innerHTML = '';
+        nameInput.focus();
+      }
+
+      function hideModal() {
+        if (!modal) return;
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+      }
+
+      function showResults() {
+        var name = normalizeName(nameInput.value);
+        if (!name) {
+          resultsEl.innerHTML = '<p style="color: var(--muted);">Enter your name and click Show.</p>';
+          return;
+        }
+        var lines = [];
+        for (var i = 0; i < scheduleData.length; i++) {
+          var m = scheduleData[i];
+          var team1 = m.team1 || [];
+          var team2 = m.team2 || [];
+          var inTeam1 = team1.some(function(p) { return nameMatches(p, name); });
+          var inTeam2 = team2.some(function(p) { return nameMatches(p, name); });
+          if (inTeam1) {
+            var partner = nameMatches(team1[0], name) ? team1[1] : team1[0];
+            var opp = team2.join(' & ');
+            lines.push('<li><strong>Round ' + m.round + ', Court ' + m.court + ':</strong> You\'re with ' + partner + ' vs ' + opp + '. <span class="gain-line">To gain rating: ' + (m.team1_gain || '—') + '</span></li>');
+          } else if (inTeam2) {
+            var partner = nameMatches(team2[0], name) ? team2[1] : team2[0];
+            var opp = team1.join(' & ');
+            lines.push('<li><strong>Round ' + m.round + ', Court ' + m.court + ':</strong> You\'re with ' + partner + ' vs ' + opp + '. <span class="gain-line">To gain rating: ' + (m.team2_gain || '—') + '</span></li>');
+          }
+        }
+        if (lines.length === 0) {
+          resultsEl.innerHTML = '<p style="color: var(--muted);">No matches found for &quot;' + name.replace(/</g, '&lt;') + '&quot;. Check spelling or choose a player from this week\'s list.</p>';
+        } else {
+          resultsEl.innerHTML = '<p>Your matches this week:</p><ul>' + lines.join('') + '</ul>';
+        }
+      }
+
+      if (btn) btn.addEventListener('click', showModal);
+      if (showBtn) showBtn.addEventListener('click', showResults);
+      if (nameInput) nameInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); showResults(); } });
+      if (backdrop) backdrop.addEventListener('click', hideModal);
+      if (closeBtn) closeBtn.addEventListener('click', hideModal);
+      if (modal) modal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideModal(); });
+    });
+  </script>
   {% endif %}
 {% endblock %}
