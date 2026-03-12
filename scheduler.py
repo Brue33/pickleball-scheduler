@@ -121,6 +121,11 @@ def update_rankings_for_match(rankings, team1, team2, winner, score_team1=None, 
             s1 = e1
         elif winner == 2 and t1 is not None and t1 <= 5 and s2 < e2:
             s2 = e2
+        # Friendly rule: if you lose and scored 5 or fewer points, don't gain rating
+        if winner == 2 and t1 is not None and t1 <= 5 and s1 > e1:
+            s1 = e1
+        elif winner == 1 and t2 is not None and t2 <= 5 and s2 > e2:
+            s2 = e2
     else:
         s1 = 1 if winner == 1 else 0
         s2 = 1 if winner == 2 else 0
