@@ -323,7 +323,7 @@ def index():
     next_wed = get_next_wednesday()
     next_game_date_display = next_wed.strftime("%A, %B ") + _ordinal_day(next_wed)
     published = load_published_schedule()
-    next_game_location_time = (published.get("time_location") or "").strip() or "Green Lake, 6:30pm"
+    next_game_location_time = ((published or {}).get("time_location") or "").strip() or "Green Lake, 6:30pm"
     return render_template(
         "index.html",
         rankings=rankings,
