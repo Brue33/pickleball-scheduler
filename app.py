@@ -326,6 +326,49 @@ def add_round_court_and_bye(schedule_entries, players):
     return schedule_entries
 
 
+def schedule_review_stats(schedule_entries, players):
+    """
+    Return stats for the Review modal: bye count per player, partner (with) counts, opponent (against) counts.
+    """
+    from collections import defaultdict
+    bye_count = {p: 0 for p in players}
+    with_count = defaultdict(lambda: defaultdict(int))
+    against_count = defaultdict(lambda: defaultdict(int))
+    for e in schedule_entries:
+        team1 = e.get("team1") or []
+        team2 = e.get("team2") or []
+        for p in e.get("bye") or []:
+            if p in bye_count:
+                bye_count[p] += 1
+        for i, p in enumerate(team1):
+            for q in team1[i + 1:]:
+                with_count[p][q] += 1
+                with_count[q][p] += 1
+        for i, p in enumerate(team2):
+            for q in team2[i + 1:]:
+                with_count[p][q] += 1
+                with_count[q][p] += 1
+        for p in team1:
+            for q in team2:
+                against_count[p][q] += 1
+                against_count[q][p] += 1
+    with_pairs = []
+    seen_with = set()
+    for p in players:
+        for q, n in with_count.get(p, {}).items():
+            if n and (p, q) not in seen_with and (q, p) not in seen_with:
+                seen_with.add((p, q))
+                with_pairs.append((p, q, n))
+    against_pairs = []
+    seen_against = set()
+    for p in players:
+        for q, n in against_count.get(p, {}).items():
+            if n and (p, q) not in seen_against and (q, p) not in seen_against:
+                seen_against.add((p, q))
+                against_pairs.append((p, q, n))
+    return {"bye_count": bye_count, "with_pairs": with_pairs, "against_pairs": against_pairs}
+
+
 @app.route("/")
 def index():
     rankings = load_rankings()
@@ -551,6 +594,9 @@ def generate():
                 avg = sum(probs) / len(probs) * 100 if probs else 50.0
                 schedule_difficulty.append((p, round(avg)))
             schedule_difficulty.sort(key=lambda x: x[1])
+            review_stats = schedule_review_stats(draft["schedule_entries"], draft["players"])
+        else:
+            review_stats = None
         return render_template(
             "generate.html",
             player_list=player_list,
@@ -559,6 +605,7 @@ def generate():
             players_in=players_in,
             draft_schedule=draft,
             schedule_difficulty=schedule_difficulty,
+            review_stats=review_stats,
         )
 
     # POST: generate schedule (already authenticated)

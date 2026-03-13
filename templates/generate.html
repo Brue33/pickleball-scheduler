@@ -11,6 +11,9 @@
     <p style="color: var(--muted); font-size: 0.9rem;">Edit any match using the dropdowns, then Save draft or Publish.</p>
     <p style="margin-bottom: 0.75rem;">
       <button type="button" id="schedule-difficulty-btn" class="btn btn-secondary">Review schedule: hardest to easiest</button>
+      {% if review_stats %}
+      <button type="button" id="schedule-review-btn" class="btn btn-secondary" style="margin-left: 0.5rem;">Review</button>
+      {% endif %}
     </p>
     <form method="post" action="{{ url_for('generate_save_draft') }}" id="draft-form">
       <p style="margin-bottom: 0.75rem;">
@@ -97,6 +100,40 @@
         <button type="button" class="schedule-difficulty-close btn btn-secondary" style="margin-top: 1rem;">Close</button>
       </div>
     </div>
+    {% if review_stats %}
+    <div id="schedule-review-modal" class="rating-gain-modal" hidden aria-hidden="true">
+      <div class="rating-gain-backdrop schedule-review-backdrop" aria-label="Close"></div>
+      <div class="rating-gain-content">
+        <h3 class="rating-gain-title">Schedule review</h3>
+        <p style="color: var(--muted); font-size: 0.9rem;">Byes, and how many times each player partners with or plays against others.</p>
+        <p style="margin: 0.75rem 0 0 0;"><strong>Byes</strong></p>
+        <ul style="margin: 0.25rem 0 0 1.25rem; padding: 0;">
+          {% for p in draft_schedule.players %}
+          <li style="margin-bottom: 0.25rem;">{{ p }}: {{ review_stats.bye_count.get(p, 0) }} bye{{ 's' if review_stats.bye_count.get(p, 0) != 1 else '' }}</li>
+          {% endfor %}
+        </ul>
+        <p style="margin: 1rem 0 0 0;"><strong>Partners (with)</strong></p>
+        <ul style="margin: 0.25rem 0 0 1.25rem; padding: 0;">
+          {% for p, q, n in review_stats.with_pairs %}
+          <li style="margin-bottom: 0.25rem;">{{ p }} with {{ q }}: {{ n }} time{{ 's' if n != 1 else '' }}</li>
+          {% endfor %}
+          {% if not review_stats.with_pairs %}
+          <li style="color: var(--muted);">None</li>
+          {% endif %}
+        </ul>
+        <p style="margin: 1rem 0 0 0;"><strong>Opponents (against)</strong></p>
+        <ul style="margin: 0.25rem 0 0 1.25rem; padding: 0;">
+          {% for p, q, n in review_stats.against_pairs %}
+          <li style="margin-bottom: 0.25rem;">{{ p }} vs {{ q }}: {{ n }} time{{ 's' if n != 1 else '' }}</li>
+          {% endfor %}
+          {% if not review_stats.against_pairs %}
+          <li style="color: var(--muted);">None</li>
+          {% endif %}
+        </ul>
+        <button type="button" class="schedule-review-close btn btn-secondary" style="margin-top: 1rem;">Close</button>
+      </div>
+    </div>
+    {% endif %}
   {% elif not player_list %}
     <p><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
   {% else %}
@@ -184,6 +221,25 @@
       if (difficultyBackdrop) difficultyBackdrop.addEventListener('click', hideDifficultyModal);
       if (difficultyClose) difficultyClose.addEventListener('click', hideDifficultyModal);
       if (difficultyModal) difficultyModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideDifficultyModal(); });
+
+      var reviewBtn = document.getElementById('schedule-review-btn');
+      var reviewModal = document.getElementById('schedule-review-modal');
+      var reviewBackdrop = reviewModal && reviewModal.querySelector('.schedule-review-backdrop');
+      var reviewClose = reviewModal && reviewModal.querySelector('.schedule-review-close');
+      function showReviewModal() {
+        if (!reviewModal) return;
+        reviewModal.hidden = false;
+        reviewModal.setAttribute('aria-hidden', 'false');
+      }
+      function hideReviewModal() {
+        if (!reviewModal) return;
+        reviewModal.hidden = true;
+        reviewModal.setAttribute('aria-hidden', 'true');
+      }
+      if (reviewBtn) reviewBtn.addEventListener('click', showReviewModal);
+      if (reviewBackdrop) reviewBackdrop.addEventListener('click', hideReviewModal);
+      if (reviewClose) reviewClose.addEventListener('click', hideReviewModal);
+      if (reviewModal) reviewModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideReviewModal(); });
     });
   </script>
   {% endif %}
