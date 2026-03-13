@@ -6,13 +6,16 @@
   <title>{% block title %}Mitten Smash Pickleball{% endblock %}</title>
   <style>
     :root {
-      --bg: #0f1419;
-      --surface: #1a2332;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #58a6ff;
-      --success: #3fb950;
-      --error: #f85149;
+      /* Pickleball court palette: court green, ball lime, court lines */
+      --bg: #0d1f0d;
+      --surface: #163016;
+      --court: #1e4620;
+      --text: #e8f5e9;
+      --muted: #7cb87c;
+      --accent: #b8e986;
+      --court-line: #e8e4d9;
+      --success: #81c784;
+      --error: #e57373;
     }
     * { box-sizing: border-box; }
     body {
@@ -25,15 +28,16 @@
     }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
+    /* Nav as baseline / court line */
     nav {
       margin-bottom: 1.5rem;
       padding-bottom: 0.75rem;
-      border-bottom: 1px solid var(--surface);
+      border-bottom: 3px solid var(--court-line);
     }
     nav a { margin-right: 1rem; }
-    .flash { padding: 0.5rem 0.75rem; margin-bottom: 1rem; border-radius: 6px; }
-    .flash.success { background: rgba(63, 185, 80, 0.2); color: var(--success); }
-    .flash.error { background: rgba(248, 81, 73, 0.2); color: var(--error); }
+    .flash { padding: 0.5rem 0.75rem; margin-bottom: 1rem; border-radius: 6px; border-left: 4px solid var(--court-line); }
+    .flash.success { background: rgba(129, 199, 132, 0.2); color: var(--success); }
+    .flash.error { background: rgba(229, 115, 115, 0.2); color: var(--error); }
     h1 { font-size: 1.5rem; margin-top: 0; }
     form label { display: block; margin-top: 0.75rem; color: var(--muted); font-size: 0.9rem; }
     input[type="text"], input[type="number"], input[type="password"], select, textarea {
@@ -42,7 +46,7 @@
       padding: 0.5rem 0.75rem;
       margin-top: 0.25rem;
       background: var(--surface);
-      border: 1px solid #30363d;
+      border: 2px solid var(--court-line);
       border-radius: 6px;
       color: var(--text);
       font-size: 1rem;
@@ -52,17 +56,18 @@
       margin-top: 1rem;
       padding: 0.5rem 1rem;
       background: var(--accent);
-      color: #fff;
-      border: none;
+      color: var(--bg);
+      border: 2px solid var(--court-line);
       border-radius: 6px;
       cursor: pointer;
       font-size: 1rem;
+      font-weight: 600;
     }
     button:hover, .btn:hover { opacity: 0.9; }
-    .btn-secondary { background: var(--surface); color: var(--text); }
-    table { border-collapse: collapse; width: 100%; max-width: 32rem; }
-    th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--surface); }
-    th { color: var(--muted); font-weight: 600; }
+    .btn-secondary { background: var(--surface); color: var(--text); border: 2px solid var(--court-line); }
+    table { border-collapse: collapse; width: 100%; max-width: 32rem; border: 2px solid var(--court-line); border-radius: 6px; overflow: hidden; }
+    th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--court-line); }
+    th { color: var(--court-line); font-weight: 600; background: var(--court); }
   </style>
   {% block head %}{% endblock %}
 </head>

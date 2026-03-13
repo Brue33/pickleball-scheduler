@@ -20,6 +20,8 @@ from scheduler import (
     DEFAULT_RATING,
     win_probability,
     HISTORY_FILE as SCHEDULER_HISTORY_FILE,
+    PUBLISHED_SCHEDULE_FILE,
+    DRAFT_SCHEDULE_FILE,
 )
 
 app = Flask(__name__)
@@ -35,8 +37,6 @@ PLAYERS_FILE = _DATA_DIR / "players.json"
 PLAYER_BIOS_FILE = _DATA_DIR / "player_bios.json"
 MATCH_HISTORY_FILE = _DATA_DIR / "match_history.json"
 AVAILABILITY_FILE = _DATA_DIR / "availability.json"
-PUBLISHED_SCHEDULE_FILE = _DATA_DIR / "published_schedule.json"
-DRAFT_SCHEDULE_FILE = _DATA_DIR / "draft_schedule.json"
 PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
