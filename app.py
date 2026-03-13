@@ -827,7 +827,7 @@ def players_ratings():
         if p and p in player_list and r is not None and str(r).strip() != "":
             try:
                 val = int(float(str(r).strip()))
-                if 0 <= val <= 3000:
+                if 0 <= val <= 5000:
                     rankings[p] = val
             except (ValueError, TypeError):
                 pass
