@@ -229,12 +229,15 @@ def save_published_schedule(date_key, next_wednesday_display, players, schedule_
 
 
 def load_drop_in_schedule():
-    """Load the published drop-in schedule; return None if missing."""
+    """Load the published drop-in schedule; return None if missing or invalid."""
     if not DROP_IN_SCHEDULE_FILE.exists():
         return None
     try:
         with open(DROP_IN_SCHEDULE_FILE) as f:
-            return json.load(f)
+            data = json.load(f)
+        if not data or not isinstance(data.get("schedule_entries"), list) or not isinstance(data.get("players"), list):
+            return None
+        return data
     except (json.JSONDecodeError, OSError):
         return None
 
