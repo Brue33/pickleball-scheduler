@@ -18,7 +18,7 @@
         {% for e in schedule_entries %}
           {% set i = loop.index0 %}
           {% if loop.first or e.get('round', 1) != schedule_entries[loop.index0 - 1].get('round', 1) %}
-            <tr><td colspan="5" style="font-weight: 600; background: var(--surface); padding: 0.5rem 0.75rem;">Round {{ e.get('round', 1) }}</td></tr>
+            <tr><td colspan="5" style="font-weight: 600; background: var(--surface); padding: 0.5rem 0.75rem;">Round {{ e.get('round', 1) }}{% if e.get('round_bye') %} — Byes: {{ e.round_bye|join(', ') }}{% endif %}</td></tr>
           {% endif %}
           <tr>
             <td>Court {{ e.get('court', 'A') }}</td>
@@ -40,9 +40,6 @@
               <input type="number" name="score_team2_{{ i }}" min="0" max="99" placeholder="9" style="width: 3.5rem;">
             </td>
           </tr>
-          {% if e.get('round_bye') %}
-            <tr><td colspan="5" style="color: var(--muted); font-size: 0.9rem;">Bye: {{ e.round_bye|join(', ') }}</td></tr>
-          {% endif %}
         {% endfor %}
       </tbody>
     </table>

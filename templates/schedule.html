@@ -24,16 +24,13 @@
       <tbody>
         {% for e in published_schedule.schedule_entries %}
           {% if loop.first or e.get('round', 1) != published_schedule.schedule_entries[loop.index0 - 1].get('round', 1) %}
-            <tr><td colspan="3" style="font-weight: 600; background: var(--surface); padding: 0.5rem 0.75rem;">Round {{ e.get('round', 1) }}</td></tr>
+            <tr><td colspan="3" style="font-weight: 600; background: var(--surface); padding: 0.5rem 0.75rem;">Round {{ e.get('round', 1) }}{% if e.get('round_bye') %} — Byes: {{ e.round_bye|join(', ') }}{% endif %}</td></tr>
           {% endif %}
           <tr>
             <td>Court {{ e.get('court', 'A') }}</td>
             <td>{{ e.team1[0] }} & {{ e.team1[1] }} <em>vs</em> {{ e.team2[0] }} & {{ e.team2[1] }}</td>
             <td>{{ (e.prob * 100)|int }}%</td>
           </tr>
-          {% if e.get('round_bye') %}
-            <tr><td colspan="3" style="color: var(--muted); font-size: 0.9rem;">Bye: {{ e.round_bye|join(', ') }}</td></tr>
-          {% endif %}
         {% endfor %}
       </tbody>
     </table>
@@ -90,16 +87,13 @@
       <tbody>
         {% for e in drop_in_schedule.schedule_entries %}
           {% if loop.first or e.get('round', 1) != drop_in_schedule.schedule_entries[loop.index0 - 1].get('round', 1) %}
-            <tr><td colspan="3" style="font-weight: 600; background: var(--surface); padding: 0.5rem 0.75rem;">Round {{ e.get('round', 1) }}</td></tr>
+            <tr><td colspan="3" style="font-weight: 600; background: var(--surface); padding: 0.5rem 0.75rem;">Round {{ e.get('round', 1) }}{% if e.get('round_bye') %} — Byes: {{ e.round_bye|join(', ') }}{% endif %}</td></tr>
           {% endif %}
           <tr>
             <td>Court {{ e.get('court', 'A') }}</td>
             <td>{{ e.team1[0] }} & {{ e.team1[1] }} <em>vs</em> {{ e.team2[0] }} & {{ e.team2[1] }}</td>
             <td>{{ (e.prob * 100)|int }}%</td>
           </tr>
-          {% if e.get('round_bye') %}
-            <tr><td colspan="3" style="color: var(--muted); font-size: 0.9rem;">Bye: {{ e.round_bye|join(', ') }}</td></tr>
-          {% endif %}
         {% endfor %}
       </tbody>
     </table>
