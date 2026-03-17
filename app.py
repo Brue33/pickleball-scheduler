@@ -363,7 +363,11 @@ def add_round_court_and_bye(schedule_entries, players, num_courts=None):
         for e in entries:
             all_bye.update(e.get("bye", []))
         if entries:
-            entries[-1]["round_bye"] = sorted(all_bye)
+            round_bye_list = sorted(all_bye)
+            # Attach round bye only to the first entry of the round so it shows once, right after "Round N"
+            entries[0]["round_bye"] = round_bye_list
+            for e in entries[1:]:
+                e["round_bye"] = []  # clear so other courts in this round don't show a bye row
     return schedule_entries
 
 
