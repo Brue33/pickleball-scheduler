@@ -212,7 +212,7 @@ def load_published_schedule():
         return None
 
 
-def save_published_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings, time_location=""):
+def save_published_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings, time_location="", num_courts=2):
     """Save the generated schedule so the Schedule tab can show it (public view)."""
     data = {
         "date_key": date_key,
@@ -221,6 +221,7 @@ def save_published_schedule(date_key, next_wednesday_display, players, schedule_
         "schedule_entries": schedule_entries,
         "rankings": dict(rankings),
         "time_location": (time_location or "").strip(),
+        "num_courts": num_courts,
     }
     with open(PUBLISHED_SCHEDULE_FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -242,7 +243,7 @@ def load_draft_schedule():
         return None
 
 
-def save_draft_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings, time_location=""):
+def save_draft_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings, time_location="", num_courts=2, rotate_partners=True, pairs=None):
     """Save draft schedule (preview on Generate tab until Publish)."""
     data = {
         "date_key": date_key,
@@ -251,6 +252,9 @@ def save_draft_schedule(date_key, next_wednesday_display, players, schedule_entr
         "schedule_entries": schedule_entries,
         "rankings": dict(rankings),
         "time_location": (time_location or "").strip(),
+        "num_courts": num_courts,
+        "rotate_partners": rotate_partners,
+        "pairs": list(pairs) if pairs else None,
     }
     with open(DRAFT_SCHEDULE_FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -303,17 +307,20 @@ def _parse_draft_entries_from_form(draft):
     return result, None
 
 
-def add_round_court_and_bye(schedule_entries, players):
+def add_round_court_and_bye(schedule_entries, players, num_courts=None):
     """
-    Add round, court (A/B), and round_bye to each entry for display.
-    4-7 players: one game per round (Court A only). 8+: two games per round (Court A, Court B).
+    Add round, court (A/B/C/D), and round_bye to each entry for display.
+    num_courts: if set, that many games per round (one per court). Else: 1 court if <8 players, 2 courts if 8+.
     """
     from collections import defaultdict
     n = len(players)
-    round_size = 1 if n < 8 else 2
+    if num_courts is not None and num_courts >= 1:
+        round_size = int(num_courts)
+    else:
+        round_size = 1 if n < 8 else 2
     for i, e in enumerate(schedule_entries):
         e["round"] = (i // round_size) + 1
-        e["court"] = "A" if round_size == 1 else ("A" if i % 2 == 0 else "B")
+        e["court"] = chr(65 + (i % round_size))  # A, B, C, D, ...
     by_round = defaultdict(list)
     for e in schedule_entries:
         by_round[e["round"]].append(e)
@@ -369,6 +376,29 @@ def schedule_review_stats(schedule_entries, players):
     return {"bye_count": bye_count, "with_pairs": with_pairs, "against_pairs": against_pairs}
 
 
+def generate_schedule_fixed_pairs(pairs, num_courts, num_rounds):
+    """
+    Build a schedule with fixed partner pairs. Each round fills num_courts games (2*num_courts pairs).
+    pairs: list of (p1, p2) or [p1, p2]; at least 2*num_courts pairs required.
+    Returns list of (team1, team2) where each team is a tuple of 2 players, in round order.
+    """
+    if len(pairs) < 2 * num_courts:
+        raise ValueError(f"Need at least {2 * num_courts} pairs for {num_courts} court(s). You have {len(pairs)}.")
+    # Normalize to list of tuples
+    pair_tuples = [tuple(p) if isinstance(p, (list, tuple)) else (p[0], p[1]) for p in pairs]
+    scheduled = []
+    pairs_per_round = 2 * num_courts
+    for r in range(num_rounds):
+        start = (r * pairs_per_round) % len(pair_tuples)
+        playing_indices = [(start + k) % len(pair_tuples) for k in range(pairs_per_round)]
+        playing_pairs = [pair_tuples[i] for i in playing_indices]
+        for g in range(num_courts):
+            t1 = playing_pairs[2 * g]
+            t2 = playing_pairs[2 * g + 1]
+            scheduled.append((t1, t2))
+    return scheduled
+
+
 @app.route("/")
 def index():
     rankings = load_rankings()
@@ -419,7 +449,7 @@ def schedule():
     schedule_rating_data = []
     schedule_difficulty = []
     if published:
-        add_round_court_and_bye(published["schedule_entries"], published["players"])
+        add_round_court_and_bye(published["schedule_entries"], published["players"], published.get("num_courts"))
         for e in published["schedule_entries"]:
             prob = e.get("prob", 0.5)
             if prob is None:
@@ -529,7 +559,7 @@ def schedule_record_results():
     if not published:
         flash("No schedule published for this week. Generate a schedule first.", "error")
         return redirect(url_for("schedule"))
-    add_round_court_and_bye(published["schedule_entries"], published["players"])
+    add_round_court_and_bye(published["schedule_entries"], published["players"], published.get("num_courts"))
     return render_template(
         "schedule_result.html",
         schedule_entries=published["schedule_entries"],
@@ -576,7 +606,7 @@ def generate():
         draft = load_draft_schedule()
         schedule_difficulty = []
         if draft:
-            add_round_court_and_bye(draft["schedule_entries"], draft["players"])
+            add_round_court_and_bye(draft["schedule_entries"], draft["players"], draft.get("num_courts"))
             player_win_probs = {p: [] for p in draft["players"]}
             for e in draft["schedule_entries"]:
                 prob = e.get("prob")
@@ -613,6 +643,14 @@ def generate():
     players_extra = request.form.get("players_extra", "").strip() if session.get("schedule_players_unlocked") else ""
     games_str = request.form.get("games", "").strip()
     time_location = request.form.get("time_location", "").strip()
+    num_courts = 2
+    try:
+        nc = request.form.get("num_courts", "2").strip()
+        if nc:
+            num_courts = max(1, min(8, int(nc)))
+    except ValueError:
+        pass
+    rotate_partners = request.form.get("rotate_partners") == "on"
 
     players = [p.strip() for p in selected if p and p.strip()]
     if players_extra:
@@ -621,10 +659,6 @@ def generate():
             if p and p not in players:
                 players.append(p)
     players = list(dict.fromkeys(players))
-
-    if not players:
-        flash("Select at least one player from the list, or add names below.", "error")
-        return redirect(url_for("generate"))
 
     games = None
     if games_str:
@@ -636,34 +670,103 @@ def generate():
             pass
 
     try:
-        schedule_list, rankings = generate_schedule(players, games_per_round=games)
-        lines = format_schedule(schedule_list, rankings, players=players)
-        schedule_entries = []
-        for i, (team1, team2) in enumerate(schedule_list, 1):
-            r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
-            r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
-            prob = win_probability(r1, r2)
-            playing = set(team1) | set(team2)
-            bye = sorted(set(players) - playing)
-            schedule_entries.append(
-                {
-                    "game": i,
-                    "team1": list(team1),
-                    "team2": list(team2),
-                    "line": lines[i - 1] if i <= len(lines) else "",
-                    "prob": prob,
-                    "bye": bye,
-                }
+        if rotate_partners:
+            if not players:
+                flash("Select at least one player from the list, or add names below.", "error")
+                return redirect(url_for("generate"))
+            schedule_list, rankings = generate_schedule(players, games_per_round=games)
+            lines = format_schedule(schedule_list, rankings, players=players)
+            schedule_entries = []
+            for i, (team1, team2) in enumerate(schedule_list, 1):
+                r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
+                r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
+                prob = win_probability(r1, r2)
+                playing = set(team1) | set(team2)
+                bye = sorted(set(players) - playing)
+                schedule_entries.append(
+                    {
+                        "game": i,
+                        "team1": list(team1),
+                        "team2": list(team2),
+                        "line": lines[i - 1] if i <= len(lines) else "",
+                        "prob": prob,
+                        "bye": bye,
+                    }
+                )
+            add_round_court_and_bye(schedule_entries, players, num_courts=num_courts)
+            save_draft_schedule(
+                date_key,
+                next_wed.strftime("%A, %B %d, %Y"),
+                players,
+                schedule_entries,
+                rankings,
+                time_location=time_location,
+                num_courts=num_courts,
+                rotate_partners=True,
+                pairs=None,
             )
-        add_round_court_and_bye(schedule_entries, players)
-        save_draft_schedule(
-            date_key,
-            next_wed.strftime("%A, %B %d, %Y"),
-            players,
-            schedule_entries,
-            rankings,
-            time_location=time_location,
-        )
+        else:
+            # Keep partners: parse pairs from form (pair_left_0, pair_right_0, ...)
+            pairs = []
+            for i in range(16):
+                left = (request.form.get(f"pair_left_{i}") or "").strip()
+                right = (request.form.get(f"pair_right_{i}") or "").strip()
+                if left and right and left != right:
+                    pairs.append((left, right))
+            min_pairs = 2 * num_courts
+            if len(pairs) < min_pairs:
+                flash(f"Need at least {min_pairs} pairs for {num_courts} court(s). Define pairs below (no duplicate players within a pair).", "error")
+                return redirect(url_for("generate"))
+            all_in_pairs = []
+            for a, b in pairs:
+                all_in_pairs.append(a)
+                all_in_pairs.append(b)
+            if len(set(all_in_pairs)) != len(all_in_pairs):
+                flash("Each player can only appear in one pair. Fix duplicate players.", "error")
+                return redirect(url_for("generate"))
+            num_rounds_str = request.form.get("num_rounds", "").strip()
+            num_rounds = None
+            if num_rounds_str:
+                try:
+                    num_rounds = int(num_rounds_str)
+                    if num_rounds < 1:
+                        num_rounds = None
+                except ValueError:
+                    pass
+            if num_rounds is None:
+                num_rounds = max(2, (len(pairs) // (2 * num_courts)) * 2)
+            schedule_list = generate_schedule_fixed_pairs(pairs, num_courts, num_rounds)
+            rankings = load_rankings()
+            lines = format_schedule(schedule_list, rankings, players=all_in_pairs)
+            schedule_entries = []
+            for i, (team1, team2) in enumerate(schedule_list, 1):
+                r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
+                r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
+                prob = win_probability(r1, r2)
+                playing = set(team1) | set(team2)
+                bye = sorted(set(all_in_pairs) - playing)
+                schedule_entries.append(
+                    {
+                        "game": i,
+                        "team1": list(team1),
+                        "team2": list(team2),
+                        "line": lines[i - 1] if i <= len(lines) else "",
+                        "prob": prob,
+                        "bye": bye,
+                    }
+                )
+            add_round_court_and_bye(schedule_entries, all_in_pairs, num_courts=num_courts)
+            save_draft_schedule(
+                date_key,
+                next_wed.strftime("%A, %B %d, %Y"),
+                all_in_pairs,
+                schedule_entries,
+                rankings,
+                time_location=time_location,
+                num_courts=num_courts,
+                rotate_partners=False,
+                pairs=[list(p) for p in pairs],
+            )
         flash("Schedule generated. Review it below and click Publish when ready to go live.", "success")
         return redirect(url_for("generate"))
     except ValueError as e:
@@ -687,7 +790,7 @@ def generate_publish():
         if err:
             flash(err, "error")
             return redirect(url_for("generate"))
-        add_round_court_and_bye(entries, draft["players"])
+        add_round_court_and_bye(entries, draft["players"], draft.get("num_courts"))
         schedule_entries = entries
     else:
         schedule_entries = draft["schedule_entries"]
@@ -699,6 +802,7 @@ def generate_publish():
         schedule_entries,
         draft["rankings"],
         time_location=time_location,
+        num_courts=draft.get("num_courts", 2),
     )
     clear_draft_schedule()
     flash("Schedule is now live on the Schedule tab.", "success")
@@ -719,7 +823,7 @@ def generate_save_draft():
     if err:
         flash(err, "error")
         return redirect(url_for("generate"))
-    add_round_court_and_bye(entries, draft["players"])
+    add_round_court_and_bye(entries, draft["players"], draft.get("num_courts"))
     time_location = request.form.get("time_location", "").strip() or draft.get("time_location", "")
     save_draft_schedule(
         draft["date_key"],
@@ -728,6 +832,9 @@ def generate_save_draft():
         entries,
         draft["rankings"],
         time_location=time_location,
+        num_courts=draft.get("num_courts", 2),
+        rotate_partners=draft.get("rotate_partners", True),
+        pairs=draft.get("pairs"),
     )
     flash("Draft saved. You can keep editing or Publish when ready.", "success")
     return redirect(url_for("generate"))

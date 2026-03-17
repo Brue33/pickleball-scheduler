@@ -137,26 +137,101 @@
   {% elif not player_list %}
     <p><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
   {% else %}
-    <form method="post" action="{{ url_for('generate') }}">
-      <label for="selected_players">Who is playing this week?</label>
-      <select id="selected_players" name="selected_players" multiple size="10" style="max-width: 20rem;">
-        {% for p in player_list %}
-          <option value="{{ p }}" {% if p in players_in %}selected style="background: var(--surface); color: var(--success); font-weight: 600;"{% endif %}>{{ p }}{% if p in players_in %} ✓ In{% endif %}</option>
-        {% endfor %}
-      </select>
-      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Players who replied <strong>In</strong> on the Availability tab are pre-selected and highlighted. Hold Ctrl (Windows/Linux) or Cmd (Mac) to change selection.</p>
+    <form method="post" action="{{ url_for('generate') }}" id="generate-form">
+      <label for="num_courts">Number of courts</label>
+      <input type="number" id="num_courts" name="num_courts" min="1" max="8" value="2" style="width: 4rem;">
+      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Maximizes games per round (4 players per court). Byes depend on number of players.</p>
 
-      {% if schedule_players_unlocked %}
-        <label for="players_extra">Additional players this week (not on list)</label>
-        <textarea id="players_extra" name="players_extra" rows="3" placeholder="Optional: one per line or comma-separated"></textarea>
-      {% endif %}
+      <p style="margin-top: 1rem;">
+        <input type="checkbox" id="rotate_partners" name="rotate_partners" checked>
+        <label for="rotate_partners" style="display: inline; margin-top: 0;">Rotate partners every round</label>
+      </p>
+      <p style="color: var(--muted); font-size: 0.9rem;">Uncheck to keep fixed partner pairs and define them below.</p>
 
-      <label for="games">Number of games (optional)</label>
-      <input type="number" id="games" name="games" min="1" max="32" placeholder="e.g. 8">
-      <label for="time_location">Time &amp; location (optional)</label>
+      <div id="rotate-options" style="margin-top: 1rem;">
+        <label for="selected_players">Who is playing this week?</label>
+        <select id="selected_players" name="selected_players" multiple size="10" style="max-width: 20rem;">
+          {% for p in player_list %}
+            <option value="{{ p }}" {% if p in players_in %}selected style="background: var(--surface); color: var(--success); font-weight: 600;"{% endif %}>{{ p }}{% if p in players_in %} ✓ In{% endif %}</option>
+          {% endfor %}
+        </select>
+        <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Players who replied <strong>In</strong> on the Availability tab are pre-selected. Hold Ctrl (Windows/Linux) or Cmd (Mac) to change selection.</p>
+
+        {% if schedule_players_unlocked %}
+          <label for="players_extra">Additional players this week (not on list)</label>
+          <textarea id="players_extra" name="players_extra" rows="3" placeholder="Optional: one per line or comma-separated"></textarea>
+        {% endif %}
+
+        <label for="games">Number of games (optional)</label>
+        <input type="number" id="games" name="games" min="1" max="32" placeholder="e.g. 8">
+        <p style="color: var(--muted); font-size: 0.9rem;">Total games; rounds fill all courts at once.</p>
+      </div>
+
+      <div id="keep-partners-options" style="margin-top: 1rem; display: none;">
+        <p style="font-weight: 600;">Define partner pairs</p>
+        <p style="color: var(--muted); font-size: 0.9rem;">Need at least <span id="min-pairs-label">4</span> pairs for <span id="courts-label">2</span> court(s). Each pair plays together every round. No duplicate players across pairs.</p>
+        <table style="max-width: 28rem; margin-top: 0.5rem;">
+          <thead>
+            <tr><th>Pair</th><th>Partner 1</th><th>Partner 2</th></tr>
+          </thead>
+          <tbody>
+            {% for i in range(8) %}
+            <tr>
+              <td>{{ i + 1 }}</td>
+              <td>
+                <select name="pair_left_{{ i }}" style="max-width: 10rem;">
+                  <option value="">—</option>
+                  {% for p in player_list %}
+                  <option value="{{ p|e }}">{{ p }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="pair_right_{{ i }}" style="max-width: 10rem;">
+                  <option value="">—</option>
+                  {% for p in player_list %}
+                  <option value="{{ p|e }}">{{ p }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <label for="games_rounds">Number of rounds (optional)</label>
+        <input type="number" id="games_rounds" name="num_rounds" min="1" max="32" placeholder="e.g. 4">
+        <p style="color: var(--muted); font-size: 0.9rem;">Each round uses all courts once.</p>
+      </div>
+
+      <label for="time_location" style="display: block; margin-top: 1rem;">Time &amp; location (optional)</label>
       <input type="text" id="time_location" name="time_location" placeholder="e.g. 6pm at Pickle U" style="max-width: 20rem;">
-      <button type="submit">Generate schedule</button>
+      <button type="submit" style="margin-top: 1rem;">Generate schedule</button>
     </form>
+    <script>
+      (function() {
+        var numCourts = document.getElementById('num_courts');
+        var rotateCheck = document.getElementById('rotate_partners');
+        var rotateOpts = document.getElementById('rotate-options');
+        var keepOpts = document.getElementById('keep-partners-options');
+        var minPairsLabel = document.getElementById('min-pairs-label');
+        var courtsLabel = document.getElementById('courts-label');
+        function updateVisibility() {
+          var rotate = rotateCheck && rotateCheck.checked;
+          if (rotateOpts) rotateOpts.style.display = rotate ? 'block' : 'none';
+          if (keepOpts) keepOpts.style.display = rotate ? 'none' : 'block';
+        }
+        function updateMinPairs() {
+          var n = numCourts && parseInt(numCourts.value, 10) || 2;
+          n = Math.max(1, Math.min(8, n));
+          if (minPairsLabel) minPairsLabel.textContent = 2 * n;
+          if (courtsLabel) courtsLabel.textContent = n;
+        }
+        if (rotateCheck) rotateCheck.addEventListener('change', updateVisibility);
+        if (numCourts) { numCourts.addEventListener('input', updateMinPairs); numCourts.addEventListener('change', updateMinPairs); }
+        updateVisibility();
+        updateMinPairs();
+      })();
+    </script>
 
     {% if not schedule_players_unlocked %}
       <p style="margin-top: 1rem; color: var(--muted); font-size: 0.9rem;">To add players not on the list, enter the players password:</p>
