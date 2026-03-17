@@ -146,12 +146,13 @@ def update_rankings_for_match(rankings, team1, team2, winner, score_team1=None, 
     return ratings
 
 
-def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
+def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, num_courts=None):
     """
     players: list of player names (4 or more; odd allowed — byes used as needed).
     games_per_round: number of games to generate (default: enough so each player plays every round).
     max_with: max times same partner in this schedule.
     max_against: max times same opponent in this schedule.
+    num_courts: if set, no player appears on more than one court per round (each round has num_courts games).
     Returns list of (team1, team2) where each team is (p1, p2).
     With 2 courts, max 8 players per round; extra players get bye for that game.
     """
@@ -222,10 +223,16 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
 
     # Build all possible 2-player teams from available
     teams = list(combinations(available, 2))
-    # Build games: two disjoint teams (no shared player)
+    # Build games: two disjoint teams (no shared player). If num_courts set, no player plays twice in same round.
     for _ in range(games_per_round * 15):
         if len(scheduled) >= games_per_round:
             break
+        round_size = num_courts if (num_courts and num_courts >= 1) else games_per_round
+        round_start = (len(scheduled) // round_size) * round_size if round_size else 0
+        players_in_this_round = set()
+        for (t1, t2) in scheduled[round_start:]:
+            players_in_this_round.update(t1)
+            players_in_this_round.update(t2)
         best = None
         best_penalty = 1e9
         shuffle(teams)
@@ -235,7 +242,8 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2):
                     continue
                 if set(t1) & set(t2):
                     continue
-                key = (tuple(sorted(t1)), tuple(sorted(t2)))
+                if round_size and (set(t1) | set(t2)) & players_in_this_round:
+                    continue  # player already in this round — can only play one court per round
                 p = score_pairing(t1, t2)
                 if p < best_penalty:
                     best_penalty = p

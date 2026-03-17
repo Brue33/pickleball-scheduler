@@ -359,11 +359,12 @@ def add_round_court_and_bye(schedule_entries, players, num_courts=None):
     for e in schedule_entries:
         by_round[e["round"]].append(e)
     for entries in by_round.values():
-        all_bye = set()
+        playing_this_round = set()
         for e in entries:
-            all_bye.update(e.get("bye", []))
+            playing_this_round.update(e.get("team1", []))
+            playing_this_round.update(e.get("team2", []))
         if entries:
-            round_bye_list = sorted(all_bye)
+            round_bye_list = sorted(set(players) - playing_this_round)
             # Attach round bye only to the first entry of the round so it shows once, right after "Round N"
             entries[0]["round_bye"] = round_bye_list
             for e in entries[1:]:
@@ -733,7 +734,7 @@ def generate():
                 return redirect(url_for("generate"))
             # Number of games is per court; total games = games * num_courts
             total_games = (games * num_courts) if games else None
-            schedule_list, rankings = generate_schedule(players, games_per_round=total_games)
+            schedule_list, rankings = generate_schedule(players, games_per_round=total_games, num_courts=num_courts)
             lines = format_schedule(schedule_list, rankings, players=players)
             schedule_entries = []
             for i, (team1, team2) in enumerate(schedule_list, 1):
