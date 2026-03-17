@@ -22,6 +22,7 @@ from scheduler import (
     HISTORY_FILE as SCHEDULER_HISTORY_FILE,
     PUBLISHED_SCHEDULE_FILE,
     DRAFT_SCHEDULE_FILE,
+    DROP_IN_SCHEDULE_FILE,
 )
 
 app = Flask(__name__)
@@ -227,6 +228,32 @@ def save_published_schedule(date_key, next_wednesday_display, players, schedule_
         json.dump(data, f, indent=2)
 
 
+def load_drop_in_schedule():
+    """Load the published drop-in schedule; return None if missing."""
+    if not DROP_IN_SCHEDULE_FILE.exists():
+        return None
+    try:
+        with open(DROP_IN_SCHEDULE_FILE) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_drop_in_schedule(day_of_week, time_str, num_courts, players, schedule_entries, rankings, time_location=""):
+    """Save the drop-in schedule (separate from weekly)."""
+    data = {
+        "day_of_week": (day_of_week or "").strip(),
+        "time": (time_str or "").strip(),
+        "num_courts": num_courts,
+        "players": list(players),
+        "schedule_entries": schedule_entries,
+        "rankings": dict(rankings),
+        "time_location": (time_location or "").strip(),
+    }
+    with open(DROP_IN_SCHEDULE_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
 def load_draft_schedule():
     """Load draft schedule for this week; return None if missing or not this week."""
     next_wed = get_next_wednesday()
@@ -243,7 +270,7 @@ def load_draft_schedule():
         return None
 
 
-def save_draft_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings, time_location="", num_courts=2, rotate_partners=True, pairs=None):
+def save_draft_schedule(date_key, next_wednesday_display, players, schedule_entries, rankings, time_location="", num_courts=2, rotate_partners=True, pairs=None, is_drop_in=False, drop_in_day="", drop_in_time="", drop_in_courts=2):
     """Save draft schedule (preview on Generate tab until Publish)."""
     data = {
         "date_key": date_key,
@@ -255,6 +282,10 @@ def save_draft_schedule(date_key, next_wednesday_display, players, schedule_entr
         "num_courts": num_courts,
         "rotate_partners": rotate_partners,
         "pairs": list(pairs) if pairs else None,
+        "is_drop_in": is_drop_in,
+        "drop_in_day": (drop_in_day or "").strip(),
+        "drop_in_time": (drop_in_time or "").strip(),
+        "drop_in_courts": drop_in_courts,
     }
     with open(DRAFT_SCHEDULE_FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -446,6 +477,9 @@ def schedule():
     next_wed = get_next_wednesday()
     next_wed_str = next_wed.strftime("%A, %B %d, %Y")
     published = load_published_schedule()
+    drop_in = load_drop_in_schedule()
+    if drop_in:
+        add_round_court_and_bye(drop_in["schedule_entries"], drop_in["players"], drop_in.get("num_courts"))
     schedule_rating_data = []
     schedule_difficulty = []
     if published:
@@ -487,6 +521,7 @@ def schedule():
         player_list=player_list,
         next_wednesday=next_wed_str,
         published_schedule=published,
+        drop_in_schedule=drop_in,
         schedule_rating_data=schedule_rating_data,
         schedule_difficulty=schedule_difficulty,
     )
@@ -554,7 +589,21 @@ def schedule_unlock_players():
 
 @app.route("/schedule/record-results")
 def schedule_record_results():
-    """Show the result-entry form for the published schedule (e.g. after generating from Slack)."""
+    """Show the result-entry form for the weekly or drop-in schedule."""
+    schedule_type = request.args.get("schedule", "weekly")
+    if schedule_type == "drop_in":
+        data = load_drop_in_schedule()
+        if not data:
+            flash("No drop-in schedule published. Publish one from the Generate tab.", "error")
+            return redirect(url_for("schedule"))
+        add_round_court_and_bye(data["schedule_entries"], data["players"], data.get("num_courts"))
+        return render_template(
+            "schedule_result.html",
+            schedule_entries=data["schedule_entries"],
+            players=data["players"],
+            rankings=data["rankings"],
+            schedule_type="drop_in",
+        )
     published = load_published_schedule()
     if not published:
         flash("No schedule published for this week. Generate a schedule first.", "error")
@@ -565,6 +614,7 @@ def schedule_record_results():
         schedule_entries=published["schedule_entries"],
         players=published["players"],
         rankings=published["rankings"],
+        schedule_type="weekly",
     )
 
 
@@ -674,7 +724,9 @@ def generate():
             if not players:
                 flash("Select at least one player from the list, or add names below.", "error")
                 return redirect(url_for("generate"))
-            schedule_list, rankings = generate_schedule(players, games_per_round=games)
+            # Number of games is per court; total games = games * num_courts
+            total_games = (games * num_courts) if games else None
+            schedule_list, rankings = generate_schedule(players, games_per_round=total_games)
             lines = format_schedule(schedule_list, rankings, players=players)
             schedule_entries = []
             for i, (team1, team2) in enumerate(schedule_list, 1):
@@ -795,6 +847,32 @@ def generate_publish():
     else:
         schedule_entries = draft["schedule_entries"]
     time_location = request.form.get("time_location", "").strip() or draft.get("time_location", "")
+
+    is_drop_in = request.form.get("is_drop_in") == "on"
+    if is_drop_in:
+        drop_in_day = request.form.get("drop_in_day", "").strip()
+        drop_in_time = request.form.get("drop_in_time", "").strip()
+        try:
+            drop_in_courts = int(request.form.get("drop_in_courts", "2") or "2")
+            drop_in_courts = max(1, min(8, drop_in_courts))
+        except (ValueError, TypeError):
+            drop_in_courts = 2
+        if not drop_in_day or not drop_in_time:
+            flash("For drop-in, please set Day of week and Time.", "error")
+            return redirect(url_for("generate"))
+        add_round_court_and_bye(schedule_entries, draft["players"], draft.get("num_courts"))
+        save_drop_in_schedule(
+            drop_in_day,
+            drop_in_time,
+            drop_in_courts,
+            draft["players"],
+            schedule_entries,
+            draft["rankings"],
+            time_location=time_location,
+        )
+        clear_draft_schedule()
+        flash("Drop-in schedule is now published on the Schedule tab.", "success")
+        return redirect(url_for("schedule"))
     save_published_schedule(
         draft["date_key"],
         draft["next_wednesday_display"],
@@ -825,6 +903,14 @@ def generate_save_draft():
         return redirect(url_for("generate"))
     add_round_court_and_bye(entries, draft["players"], draft.get("num_courts"))
     time_location = request.form.get("time_location", "").strip() or draft.get("time_location", "")
+    is_drop_in = request.form.get("is_drop_in") == "on"
+    drop_in_day = request.form.get("drop_in_day", "").strip()
+    drop_in_time = request.form.get("drop_in_time", "").strip()
+    try:
+        drop_in_courts = int(request.form.get("drop_in_courts", "2") or "2")
+        drop_in_courts = max(1, min(8, drop_in_courts))
+    except (ValueError, TypeError):
+        drop_in_courts = 2
     save_draft_schedule(
         draft["date_key"],
         draft["next_wednesday_display"],
@@ -835,6 +921,10 @@ def generate_save_draft():
         num_courts=draft.get("num_courts", 2),
         rotate_partners=draft.get("rotate_partners", True),
         pairs=draft.get("pairs"),
+        is_drop_in=is_drop_in,
+        drop_in_day=drop_in_day,
+        drop_in_time=drop_in_time,
+        drop_in_courts=drop_in_courts,
     )
     flash("Draft saved. You can keep editing or Publish when ready.", "success")
     return redirect(url_for("generate"))
@@ -1145,6 +1235,14 @@ def export_published_schedule():
         return jsonify(data)
     except (json.JSONDecodeError, OSError):
         return jsonify({})
+
+
+@app.route("/export/drop_in_schedule")
+def export_drop_in_schedule():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    data = load_drop_in_schedule()
+    return jsonify(data) if data else jsonify({})
 
 
 def min_score_rating_gain(prob):

@@ -20,6 +20,28 @@
         <label for="time_location">Time &amp; location (optional)</label>
         <input type="text" id="time_location" name="time_location" value="{{ draft_schedule.get('time_location', '')|e }}" placeholder="e.g. 6pm at Pickle U" style="max-width: 20rem;">
       </p>
+      <p style="margin-bottom: 0.75rem;">
+        <input type="checkbox" id="draft_is_drop_in" name="is_drop_in" value="on" {% if draft_schedule.get('is_drop_in') %}checked{% endif %}>
+        <label for="draft_is_drop_in" style="display: inline; margin-top: 0;">Publish as drop-in</label>
+      </p>
+      <div id="draft-drop-in-options" style="margin-bottom: 0.75rem; display: {% if draft_schedule.get('is_drop_in') %}block{% else %}none{% endif %};">
+        <label for="drop_in_day">Day of week</label>
+        <select id="drop_in_day" name="drop_in_day" style="max-width: 10rem;">
+          <option value="">—</option>
+          <option value="Monday" {% if draft_schedule.get('drop_in_day') == 'Monday' %}selected{% endif %}>Monday</option>
+          <option value="Tuesday" {% if draft_schedule.get('drop_in_day') == 'Tuesday' %}selected{% endif %}>Tuesday</option>
+          <option value="Wednesday" {% if draft_schedule.get('drop_in_day') == 'Wednesday' %}selected{% endif %}>Wednesday</option>
+          <option value="Thursday" {% if draft_schedule.get('drop_in_day') == 'Thursday' %}selected{% endif %}>Thursday</option>
+          <option value="Friday" {% if draft_schedule.get('drop_in_day') == 'Friday' %}selected{% endif %}>Friday</option>
+          <option value="Saturday" {% if draft_schedule.get('drop_in_day') == 'Saturday' %}selected{% endif %}>Saturday</option>
+          <option value="Sunday" {% if draft_schedule.get('drop_in_day') == 'Sunday' %}selected{% endif %}>Sunday</option>
+        </select>
+        <label for="drop_in_time" style="display: block; margin-top: 0.5rem;">Time</label>
+        <input type="text" id="drop_in_time" name="drop_in_time" value="{{ draft_schedule.get('drop_in_time', '')|e }}" placeholder="e.g. 6pm" style="max-width: 8rem;">
+        <label for="drop_in_courts" style="display: block; margin-top: 0.5rem;">Courts</label>
+        <input type="number" id="drop_in_courts" name="drop_in_courts" min="1" max="8" value="{{ draft_schedule.get('drop_in_courts', 2) }}" style="width: 4rem;">
+        <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Publishing as drop-in saves to the Drop-in schedule (separate from the weekly schedule).</p>
+      </div>
       <table>
         <thead>
           <tr>
@@ -162,9 +184,9 @@
           <textarea id="players_extra" name="players_extra" rows="3" placeholder="Optional: one per line or comma-separated"></textarea>
         {% endif %}
 
-        <label for="games">Number of games (optional)</label>
+        <label for="games">Number of games per court (optional)</label>
         <input type="number" id="games" name="games" min="1" max="32" placeholder="e.g. 8">
-        <p style="color: var(--muted); font-size: 0.9rem;">Total games; rounds fill all courts at once.</p>
+        <p style="color: var(--muted); font-size: 0.9rem;">Games each court plays. Total games = games × courts (e.g. 8 on 2 courts = 16 games).</p>
       </div>
 
       <div id="keep-partners-options" style="margin-top: 1rem; display: none;">
@@ -315,6 +337,14 @@
       if (reviewBackdrop) reviewBackdrop.addEventListener('click', hideReviewModal);
       if (reviewClose) reviewClose.addEventListener('click', hideReviewModal);
       if (reviewModal) reviewModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideReviewModal(); });
+
+      var draftDropInCheck = document.getElementById('draft_is_drop_in');
+      var draftDropInOpts = document.getElementById('draft-drop-in-options');
+      function updateDraftDropInVisibility() {
+        if (draftDropInOpts) draftDropInOpts.style.display = (draftDropInCheck && draftDropInCheck.checked) ? 'block' : 'none';
+      }
+      if (draftDropInCheck) draftDropInCheck.addEventListener('change', updateDraftDropInVisibility);
+      updateDraftDropInVisibility();
     });
   </script>
   {% endif %}

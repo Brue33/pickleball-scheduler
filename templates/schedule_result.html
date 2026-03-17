@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Schedule — {{ players|length }} players{% endblock %}
 {% block content %}
-  <h1>This week’s schedule</h1>
+  <h1>{% if schedule_type == 'drop_in' %}Drop-in schedule{% else %}This week’s schedule{% endif %}</h1>
   <p><strong>Players:</strong> {{ players|join(", ") }}</p>
   <form method="post" action="{{ url_for('schedule_results') }}">
     <table>

@@ -28,6 +28,7 @@ RANKINGS_FILE = _BASE / "rankings.json"
 HISTORY_FILE = _BASE / "play_history.json"
 PUBLISHED_SCHEDULE_FILE = _BASE / "published_schedule.json"
 DRAFT_SCHEDULE_FILE = _BASE / "draft_schedule.json"
+DROP_IN_SCHEDULE_FILE = _BASE / "drop_in_schedule.json"
 
 
 def load_rankings():

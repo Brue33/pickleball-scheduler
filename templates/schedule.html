@@ -72,6 +72,43 @@
     <p style="color: var(--muted); font-size: 0.9rem;">No schedule published yet for this week. Use the <a href="{{ url_for('generate') }}">Generate</a> tab (password required) to create one.</p>
   {% endif %}
 
+  {% if drop_in_schedule %}
+    <h2 style="font-size: 1.1rem; margin-top: 2rem;">Drop-in schedule</h2>
+    <p style="color: var(--muted); font-size: 0.9rem;">{{ drop_in_schedule.day_of_week }}s {{ drop_in_schedule.time }}{% if drop_in_schedule.get('num_courts') %} — {{ drop_in_schedule.num_courts }} court(s){% endif %}</p>
+    <p style="color: var(--muted); font-size: 0.9rem;">{{ drop_in_schedule.players|join(", ") }}</p>
+    {% if drop_in_schedule.get('time_location') %}
+    <p style="color: var(--muted); font-size: 0.9rem;"><strong>Location:</strong> {{ drop_in_schedule.time_location }}</p>
+    {% endif %}
+    <table>
+      <thead>
+        <tr>
+          <th>Court</th>
+          <th>Match</th>
+          <th>Team 1 win chance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in drop_in_schedule.schedule_entries %}
+          {% if loop.first or e.get('round', 1) != drop_in_schedule.schedule_entries[loop.index0 - 1].get('round', 1) %}
+            <tr><td colspan="3" style="font-weight: 600; background: var(--surface); padding: 0.5rem 0.75rem;">Round {{ e.get('round', 1) }}</td></tr>
+          {% endif %}
+          <tr>
+            <td>Court {{ e.get('court', 'A') }}</td>
+            <td>{{ e.team1[0] }} & {{ e.team1[1] }} <em>vs</em> {{ e.team2[0] }} & {{ e.team2[1] }}</td>
+            <td>{{ (e.prob * 100)|int }}%</td>
+          </tr>
+          {% if e.get('round_bye') %}
+            <tr><td colspan="3" style="color: var(--muted); font-size: 0.9rem;">Bye: {{ e.round_bye|join(', ') }}</td></tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    <p style="margin-top: 0.75rem;">
+      <a href="{{ url_for('schedule_record_results', schedule='drop_in') }}" class="btn">Record results (drop-in)</a>
+      — Mark winners and scores for the drop-in schedule.
+    </p>
+  {% endif %}
+
   {% if not player_list %}
     <p style="margin-top: 1rem;"><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
   {% endif %}
