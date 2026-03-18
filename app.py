@@ -300,6 +300,17 @@ def clear_draft_schedule():
         DRAFT_SCHEDULE_FILE.unlink()
 
 
+def _prob_value(e, default=0.5):
+    """Return prob from a schedule entry as float; use default if missing/invalid."""
+    p = e.get("prob", default)
+    if p is None:
+        return float(default)
+    try:
+        return float(p)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 def _parse_draft_entries_from_form(draft):
     """
     Build schedule_entries from request form (team1_0_i, team1_1_i, team2_0_i, team2_1_i).
@@ -345,6 +356,7 @@ def add_round_court_and_bye(schedule_entries, players, num_courts=None):
     """
     Add round, court (A/B/C/D), and round_bye to each entry for display.
     num_courts: if set, that many games per round (one per court). Else: 1 court if <8 players, 2 courts if 8+.
+    round_bye is set to players not playing in any game this round (shown once per round), not per court.
     """
     from collections import defaultdict
     n = len(players)
@@ -369,6 +381,47 @@ def add_round_court_and_bye(schedule_entries, players, num_courts=None):
             entries[0]["round_bye"] = round_bye_list
             for e in entries[1:]:
                 e["round_bye"] = []  # clear so other courts in this round don't show a bye row
+    return schedule_entries
+
+
+def compute_schedule_difficulty(schedule_entries, players):
+    """Return sorted list of (player, avg_win_pct) for schedule difficulty (hardest to easiest)."""
+    player_win_probs = {p: [] for p in players}
+    for e in schedule_entries:
+        prob = _prob_value(e)
+        for p in e.get("team1", []):
+            if p in player_win_probs:
+                player_win_probs[p].append(prob)
+        for p in e.get("team2", []):
+            if p in player_win_probs:
+                player_win_probs[p].append(1 - prob)
+    result = []
+    for p in players:
+        probs = player_win_probs.get(p, [])
+        avg = sum(probs) / len(probs) * 100 if probs else 50.0
+        result.append((p, round(avg)))
+    result.sort(key=lambda x: x[1])  # ascending: hardest (lowest %) first
+    return result
+
+
+def build_schedule_entries_from_list(schedule_list, rankings, players, lines=None):
+    """Build schedule_entries dicts from list of (team1, team2); optional lines for display."""
+    schedule_entries = []
+    for i, (team1, team2) in enumerate(schedule_list, 1):
+        r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
+        r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
+        prob = win_probability(r1, r2)
+        playing = set(team1) | set(team2)
+        bye = sorted(set(players) - playing)
+        line = (lines[i - 1] if lines and i <= len(lines) else "")
+        schedule_entries.append({
+            "game": i,
+            "team1": list(team1),
+            "team2": list(team2),
+            "line": line,
+            "prob": prob,
+            "bye": bye,
+        })
     return schedule_entries
 
 
@@ -493,10 +546,7 @@ def schedule():
     if published:
         add_round_court_and_bye(published["schedule_entries"], published["players"], published.get("num_courts"))
         for e in published["schedule_entries"]:
-            prob = e.get("prob", 0.5)
-            if prob is None:
-                prob = 0.5
-            prob = float(prob)
+            prob = _prob_value(e)
             schedule_rating_data.append({
                 "round": e.get("round", 1),
                 "court": e.get("court", "A"),
@@ -505,24 +555,7 @@ def schedule():
                 "team1_gain": min_score_rating_gain(prob),
                 "team2_gain": min_score_rating_gain(1 - prob),
             })
-        # Per-player average win chance (lower = harder schedule). Sort hardest to easiest.
-        player_win_probs = {p: [] for p in published["players"]}
-        for e in published["schedule_entries"]:
-            prob = e.get("prob")
-            if prob is None:
-                prob = 0.5
-            prob = float(prob)
-            for p in e.get("team1", []):
-                if p in player_win_probs:
-                    player_win_probs[p].append(prob)
-            for p in e.get("team2", []):
-                if p in player_win_probs:
-                    player_win_probs[p].append(1 - prob)
-        for p in published["players"]:
-            probs = player_win_probs.get(p, [])
-            avg = sum(probs) / len(probs) * 100 if probs else 50.0
-            schedule_difficulty.append((p, round(avg)))
-        schedule_difficulty.sort(key=lambda x: x[1])  # ascending: hardest (lowest %) first
+        schedule_difficulty[:] = compute_schedule_difficulty(published["schedule_entries"], published["players"])
     return render_template(
         "schedule.html",
         rankings=rankings,
@@ -665,23 +698,7 @@ def generate():
         schedule_difficulty = []
         if draft:
             add_round_court_and_bye(draft["schedule_entries"], draft["players"], draft.get("num_courts"))
-            player_win_probs = {p: [] for p in draft["players"]}
-            for e in draft["schedule_entries"]:
-                prob = e.get("prob")
-                if prob is None:
-                    prob = 0.5
-                prob = float(prob)
-                for p in e.get("team1", []):
-                    if p in player_win_probs:
-                        player_win_probs[p].append(prob)
-                for p in e.get("team2", []):
-                    if p in player_win_probs:
-                        player_win_probs[p].append(1 - prob)
-            for p in draft["players"]:
-                probs = player_win_probs.get(p, [])
-                avg = sum(probs) / len(probs) * 100 if probs else 50.0
-                schedule_difficulty.append((p, round(avg)))
-            schedule_difficulty.sort(key=lambda x: x[1])
+            schedule_difficulty[:] = compute_schedule_difficulty(draft["schedule_entries"], draft["players"])
             review_stats = schedule_review_stats(draft["schedule_entries"], draft["players"])
         else:
             review_stats = None
@@ -736,23 +753,7 @@ def generate():
             total_games = (games * num_courts) if games else None
             schedule_list, rankings = generate_schedule(players, games_per_round=total_games, num_courts=num_courts)
             lines = format_schedule(schedule_list, rankings, players=players)
-            schedule_entries = []
-            for i, (team1, team2) in enumerate(schedule_list, 1):
-                r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
-                r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
-                prob = win_probability(r1, r2)
-                playing = set(team1) | set(team2)
-                bye = sorted(set(players) - playing)
-                schedule_entries.append(
-                    {
-                        "game": i,
-                        "team1": list(team1),
-                        "team2": list(team2),
-                        "line": lines[i - 1] if i <= len(lines) else "",
-                        "prob": prob,
-                        "bye": bye,
-                    }
-                )
+            schedule_entries = build_schedule_entries_from_list(schedule_list, rankings, players, lines)
             add_round_court_and_bye(schedule_entries, players, num_courts=num_courts)
             save_draft_schedule(
                 date_key,
@@ -798,23 +799,7 @@ def generate():
             schedule_list = generate_schedule_fixed_pairs(pairs, num_courts, num_rounds)
             rankings = load_rankings()
             lines = format_schedule(schedule_list, rankings, players=all_in_pairs)
-            schedule_entries = []
-            for i, (team1, team2) in enumerate(schedule_list, 1):
-                r1 = [rankings.get(p, DEFAULT_RATING) for p in team1]
-                r2 = [rankings.get(p, DEFAULT_RATING) for p in team2]
-                prob = win_probability(r1, r2)
-                playing = set(team1) | set(team2)
-                bye = sorted(set(all_in_pairs) - playing)
-                schedule_entries.append(
-                    {
-                        "game": i,
-                        "team1": list(team1),
-                        "team2": list(team2),
-                        "line": lines[i - 1] if i <= len(lines) else "",
-                        "prob": prob,
-                        "bye": bye,
-                    }
-                )
+            schedule_entries = build_schedule_entries_from_list(schedule_list, rankings, all_in_pairs, lines)
             add_round_court_and_bye(schedule_entries, all_in_pairs, num_courts=num_courts)
             save_draft_schedule(
                 date_key,

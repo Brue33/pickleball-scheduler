@@ -110,44 +110,6 @@
 
 {% block head %}
   {% if published_schedule %}
-  <style>
-    .rating-gain-modal {
-      position: fixed;
-      inset: 0;
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem;
-    }
-    .rating-gain-modal[hidden] { display: none; }
-    .rating-gain-backdrop {
-      position: absolute;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.6);
-      cursor: pointer;
-    }
-    .rating-gain-content {
-      position: relative;
-      background: var(--surface);
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 1.25rem 1.5rem;
-      max-width: 32rem;
-      width: 100%;
-      max-height: 90vh;
-      overflow-y: auto;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    }
-    .rating-gain-title { margin: 0 0 0.75rem 0; font-size: 1.25rem; }
-    .rating-gain-results {
-      margin-top: 1rem;
-      color: var(--text);
-    }
-    .rating-gain-results ul { margin: 0.5rem 0 0 0; padding-left: 1.25rem; }
-    .rating-gain-results li { margin-bottom: 0.5rem; }
-    .rating-gain-results .gain-line { font-weight: 600; color: var(--accent); }
-  </style>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       var btn = document.getElementById('rating-gain-btn');

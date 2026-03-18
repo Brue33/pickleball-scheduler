@@ -264,37 +264,6 @@
 
 {% block head %}
   {% if draft_schedule %}
-  <style>
-    .rating-gain-modal {
-      position: fixed;
-      inset: 0;
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem;
-    }
-    .rating-gain-modal[hidden] { display: none; }
-    .rating-gain-backdrop {
-      position: absolute;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.6);
-      cursor: pointer;
-    }
-    .rating-gain-content {
-      position: relative;
-      background: var(--surface);
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 1.25rem 1.5rem;
-      max-width: 32rem;
-      width: 100%;
-      max-height: 90vh;
-      overflow-y: auto;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    }
-    .rating-gain-title { margin: 0 0 0.75rem 0; font-size: 1.25rem; }
-  </style>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       var difficultyBtn = document.getElementById('schedule-difficulty-btn');
