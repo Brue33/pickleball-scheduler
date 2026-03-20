@@ -16,6 +16,8 @@ from scheduler import (
     load_rankings,
     save_rankings,
     update_rankings_for_match,
+    apply_match_to_ratings_in_place,
+    adjust_shares_for_friendly_rules,
     format_schedule,
     DEFAULT_RATING,
     win_probability,
@@ -112,6 +114,72 @@ def save_match_history(matches_newest_first):
         json.dump({"matches": stored}, f, indent=2)
 
 
+def save_match_history_and_rebuild_rankings(matches_newest_first):
+    """
+    Persist history (newest first), recompute prob_team1 per match from replay order,
+    and rebuild rankings.json by replaying all games chronologically (same rules as live updates).
+    Players who only appear in old rankings and not in any match keep their previous rating.
+    """
+    chrono = list(reversed(matches_newest_first))
+    old_rankings = load_rankings()
+    if not chrono:
+        save_match_history([])
+        save_rankings({p: DEFAULT_RATING for p in old_rankings.keys()} if old_rankings else {})
+        return
+    players = set(old_rankings.keys())
+    for m in chrono:
+        for p in (m.get("team1") or []) + (m.get("team2") or []):
+            if p:
+                players.add(p)
+    ratings = {p: DEFAULT_RATING for p in players}
+    rebuilt_chrono = []
+    for m in chrono:
+        t1 = [str(x).strip() for x in (m.get("team1") or [])]
+        t2 = [str(x).strip() for x in (m.get("team2") or [])]
+        if len(t1) != 2 or len(t2) != 2 or not all(t1) or not all(t2):
+            raise ValueError("Each recorded game needs two named players per team.")
+        if len(set(t1 + t2)) != 4:
+            raise ValueError("Each game needs four distinct players.")
+        winner = m.get("winner")
+        if winner not in (1, 2):
+            raise ValueError("Each game needs winner 1 or 2.")
+        team1_t = tuple(t1)
+        team2_t = tuple(t2)
+        r1 = tuple(ratings.get(p, DEFAULT_RATING) for p in team1_t)
+        r2 = tuple(ratings.get(p, DEFAULT_RATING) for p in team2_t)
+        prob_team1 = win_probability(r1, r2)
+        out = {
+            "team1": list(team1_t),
+            "team2": list(team2_t),
+            "winner": int(winner),
+            "date": m.get("date"),
+            "prob_team1": round(float(prob_team1), 4),
+        }
+        s1 = m.get("score_team1")
+        s2 = m.get("score_team2")
+        if s1 is not None and s2 is not None:
+            try:
+                out["score_team1"] = int(s1)
+                out["score_team2"] = int(s2)
+            except (ValueError, TypeError):
+                pass
+        apply_match_to_ratings_in_place(
+            ratings,
+            team1_t,
+            team2_t,
+            int(winner),
+            out.get("score_team1"),
+            out.get("score_team2"),
+        )
+        rebuilt_chrono.append(out)
+    newest_first = list(reversed(rebuilt_chrono))
+    for p, v in old_rankings.items():
+        if p not in ratings:
+            ratings[p] = v
+    save_rankings(ratings)
+    save_match_history(newest_first)
+
+
 def get_wins_losses_by_player():
     """Return dict of player -> {'wins': int, 'losses': int} from match history."""
     matches = load_match_history()
@@ -134,6 +202,64 @@ def get_wins_losses_by_player():
             if p:
                 losses[p] = losses.get(p, 0) + 1
     return {p: {"wins": wins.get(p, 0), "losses": losses.get(p, 0)} for p in set(wins) | set(losses)}
+
+
+def resolve_player_display_name(query):
+    """Case-insensitive match to a player name from rankings or match history. Returns stored spelling or None."""
+    q = (query or "").strip().lower()
+    if not q:
+        return None
+    for p in load_rankings().keys():
+        if p.strip().lower() == q:
+            return p
+    for m in load_match_history():
+        for lst in (m.get("team1") or [], m.get("team2") or []):
+            for p in lst:
+                if p and p.strip().lower() == q:
+                    return p
+    return None
+
+
+def recent_games_rating_review(player_query, max_games=10):
+    """
+    Replay all matches in chronological order and return the last max_games involving the player,
+    with rating before/after each (from replay, not live rankings.json).
+    """
+    name = resolve_player_display_name(player_query)
+    if not name:
+        return None, {"error": "not_found", "message": "No player matched that name."}
+    matches_chrono = list(reversed(load_match_history()))
+    ratings = {}
+    rows = []
+    for m in matches_chrono:
+        team1 = m.get("team1") or []
+        team2 = m.get("team2") or []
+        winner = m.get("winner")
+        if winner not in (1, 2):
+            continue
+        s1 = m.get("score_team1")
+        s2 = m.get("score_team2")
+        in_match = name in team1 or name in team2
+        before = int(ratings.get(name, DEFAULT_RATING)) if in_match else None
+        apply_match_to_ratings_in_place(ratings, team1, team2, winner, s1, s2)
+        if in_match:
+            after = int(ratings[name])
+            rows.append(
+                {
+                    "date": m.get("date"),
+                    "team1": list(team1),
+                    "team2": list(team2),
+                    "winner": winner,
+                    "score_team1": s1,
+                    "score_team2": s2,
+                    "rating_before": before,
+                    "rating_after": after,
+                    "delta": after - before,
+                }
+            )
+    last_n = rows[-max_games:]
+    last_n = list(reversed(last_n))
+    return name, {"matches": last_n}
 
 
 def append_match(team1, team2, winner, score_team1=None, score_team2=None, prob_team1=None):
@@ -552,8 +678,8 @@ def schedule():
                 "court": e.get("court", "A"),
                 "team1": list(e.get("team1", [])),
                 "team2": list(e.get("team2", [])),
-                "team1_gain": min_score_rating_gain(prob),
-                "team2_gain": min_score_rating_gain(1 - prob),
+                "team1_gain": min_score_rating_gain(prob, for_team=1),
+                "team2_gain": min_score_rating_gain(prob, for_team=2),
             })
         schedule_difficulty[:] = compute_schedule_difficulty(published["schedule_entries"], published["players"])
     return render_template(
@@ -1156,6 +1282,18 @@ def rankings():
     return render_template("rankings.html", rankings=sorted_rankings, bios=bios, wins_losses=wins_losses)
 
 
+@app.route("/rankings/recent-games")
+def rankings_recent_games():
+    """JSON: last 10 matches for a player with replayed rating before/after each."""
+    q = request.args.get("name", "").strip()
+    if not q:
+        return jsonify({"error": "missing_name", "message": "Enter a name."}), 400
+    resolved, payload = recent_games_rating_review(q, max_games=10)
+    if resolved is None:
+        return jsonify(payload), 404
+    return jsonify({"player": resolved, "matches": payload["matches"]})
+
+
 def _export_key_valid():
     return request.args.get("key") == os.environ.get("EXPORT_SECRET")
 
@@ -1238,21 +1376,65 @@ def export_drop_in_schedule():
     return jsonify(data) if data else jsonify({})
 
 
-def min_score_rating_gain(prob):
+def min_score_rating_gain(schedule_prob_team1, for_team=1):
     """
-    Given expected score share (0-1), return min winning score for that team in 'to 11, win by 2' format.
-    E.g. '11-4 or better'. Team gains rating when actual share > prob.
+    Minimum **win** (you score 11 vs opponent t, win by 2 rules) so your side **gains** rating,
+    using the same friendly-rule share clamps as real updates (hold opponent to 5+ to avoid
+    free pass when under expected; etc.).
+
+    schedule_prob_team1: expected score share for team 1 from the schedule (same as win % basis).
+    for_team: 1 = advice for team 1, 2 = advice for team 2.
     """
-    if prob is None or prob >= 1.0:
+    if schedule_prob_team1 is None:
+        e1 = 0.5
+    else:
+        try:
+            e1 = float(schedule_prob_team1)
+        except (TypeError, ValueError):
+            e1 = 0.5
+    e2 = 1.0 - e1
+
+    if for_team == 1:
+        e_own = e1
+    else:
+        e_own = e2
+
+    if e_own >= 1.0:
         return "11-0 or better"
-    if prob <= 0:
+    if e_own <= 0:
         return "11-9 or better"
-    e1 = float(prob)
-    for t2 in range(9, -1, -1):
-        if 11 / (11 + t2) > e1:
-            return f"11-{t2} or better"
-    if 12 / 22 > e1:
+
+    def team1_wins_gain(opponent_pts, my_pts=11):
+        tot = my_pts + opponent_pts
+        s1_raw = my_pts / tot
+        s2_raw = opponent_pts / tot
+        s1, s2 = adjust_shares_for_friendly_rules(1, my_pts, opponent_pts, s1_raw, s2_raw, e1, e2)
+        return s1 > e1
+
+    def team2_wins_gain(opponent_pts, my_pts=11):
+        tot = opponent_pts + my_pts
+        s1_raw = opponent_pts / tot
+        s2_raw = my_pts / tot
+        s1, s2 = adjust_shares_for_friendly_rules(2, opponent_pts, my_pts, s1_raw, s2_raw, e1, e2)
+        return s2 > e2
+
+    if for_team == 1:
+        for t_opp in range(9, -1, -1):
+            if team1_wins_gain(t_opp):
+                return f"11-{t_opp} or better"
+        if team1_wins_gain(10, 12):
+            return "12-10 or better"
+        if team1_wins_gain(11, 13):
+            return "13-11 or better"
+        return "13-11 or better"
+
+    for t_opp in range(9, -1, -1):
+        if team2_wins_gain(t_opp):
+            return f"11-{t_opp} or better"
+    if team2_wins_gain(10, 12):
         return "12-10 or better"
+    if team2_wins_gain(11, 13):
+        return "13-11 or better"
     return "13-11 or better"
 
 
@@ -1286,10 +1468,10 @@ def history():
 
 @app.route("/history/unlock", methods=["POST"])
 def history_unlock():
-    """Unlock score editing on Past games (schedule password)."""
+    """Unlock editing on Past games (schedule password)."""
     if request.form.get("password", "").strip() == SCHEDULE_PASSWORD:
         session["history_edit_authenticated"] = True
-        flash("You can now edit scores.", "success")
+        flash("You can edit scores, lineups, delete games, and save — rankings will be recomputed from history.", "success")
     else:
         flash("Incorrect password.", "error")
     return redirect(url_for("history"))
@@ -1303,25 +1485,53 @@ def history_lock():
 
 @app.route("/history/save", methods=["POST"])
 def history_save():
-    """Save edited scores for past games. Requires history unlock."""
+    """Save edited games (scores, lineups, winner) or deletions; rebuild rankings from full history."""
     if not session.get("history_edit_authenticated"):
-        flash("Unlock score editing first (password required).", "error")
+        flash("Unlock editing first (password required).", "error")
         return redirect(url_for("history"))
     matches = load_match_history()
+    new_list = []
     for i, m in enumerate(matches):
-        s1 = request.form.get(f"score_team1_{i}")
-        s2 = request.form.get(f"score_team2_{i}")
-        if s1 not in (None, "") and s2 not in (None, ""):
+        if request.form.get(f"hist_delete_{i}") == "1":
+            continue
+        t1a = (request.form.get(f"hist_team1_0_{i}") or "").strip()
+        t1b = (request.form.get(f"hist_team1_1_{i}") or "").strip()
+        t2a = (request.form.get(f"hist_team2_0_{i}") or "").strip()
+        t2b = (request.form.get(f"hist_team2_1_{i}") or "").strip()
+        winner = request.form.get(f"hist_winner_{i}")
+        if not t1a and not t1b and not t2a and not t2b:
+            continue
+        if not (t1a and t1b and t2a and t2b):
+            flash(f"Row {i + 1} (newest-first): fill all four player names or delete the game.", "error")
+            return redirect(url_for("history"))
+        if len({t1a, t1b, t2a, t2b}) != 4:
+            flash(f"Row {i + 1}: the four players must be different people.", "error")
+            return redirect(url_for("history"))
+        if winner not in ("1", "2"):
+            flash(f"Row {i + 1}: choose Team 1 or Team 2 as winner.", "error")
+            return redirect(url_for("history"))
+        s1_raw = request.form.get(f"score_team1_{i}")
+        s2_raw = request.form.get(f"score_team2_{i}")
+        rec = {
+            "date": m.get("date"),
+            "team1": [t1a, t1b],
+            "team2": [t2a, t2b],
+            "winner": int(winner),
+        }
+        if s1_raw not in (None, "") and s2_raw not in (None, ""):
             try:
-                m["score_team1"] = int(s1)
-                m["score_team2"] = int(s2)
+                rec["score_team1"] = int(s1_raw)
+                rec["score_team2"] = int(s2_raw)
             except ValueError:
-                pass
-        else:
-            m.pop("score_team1", None)
-            m.pop("score_team2", None)
-    save_match_history(matches)
-    flash("Scores updated.", "success")
+                flash(f"Row {i + 1}: scores must be whole numbers.", "error")
+                return redirect(url_for("history"))
+        new_list.append(rec)
+    try:
+        save_match_history_and_rebuild_rankings(new_list)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("history"))
+    flash("Past games saved and rankings recomputed from full history.", "success")
     return redirect(url_for("history"))
 
 

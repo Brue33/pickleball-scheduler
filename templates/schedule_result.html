@@ -41,6 +41,35 @@
             </td>
           </tr>
         {% endfor %}
+        {% set nbase = schedule_entries|length %}
+        {% for j in [0, 1, 2, 3, 4] %}
+          {% set i = nbase + j %}
+          {% if loop.first %}
+          <tr><td colspan="5" style="font-weight: 600; background: var(--surface); padding: 0.5rem 0.75rem;">Extra games (optional) — e.g. pickup games if people wanted to play more</td></tr>
+          {% endif %}
+          <tr>
+            <td>Extra</td>
+            <td>
+              <input type="text" name="team1_0_{{ i }}" placeholder="Team 1 player 1" style="width: 7rem; max-width: 100%;" autocomplete="off"> &amp;
+              <input type="text" name="team1_1_{{ i }}" placeholder="Team 1 player 2" style="width: 7rem; max-width: 100%;" autocomplete="off">
+              <em>vs</em>
+              <input type="text" name="team2_0_{{ i }}" placeholder="Team 2 player 1" style="width: 7rem; max-width: 100%;" autocomplete="off"> &amp;
+              <input type="text" name="team2_1_{{ i }}" placeholder="Team 2 player 2" style="width: 7rem; max-width: 100%;" autocomplete="off">
+            </td>
+            <td>—</td>
+            <td>
+              <select name="winner_{{ i }}" style="max-width: 8rem;">
+                <option value="">—</option>
+                <option value="1">Team 1</option>
+                <option value="2">Team 2</option>
+              </select>
+            </td>
+            <td>
+              <input type="number" name="score_team1_{{ i }}" min="0" max="99" placeholder="11" style="width: 3.5rem;"> –
+              <input type="number" name="score_team2_{{ i }}" min="0" max="99" placeholder="9" style="width: 3.5rem;">
+            </td>
+          </tr>
+        {% endfor %}
       </tbody>
     </table>
     <button type="submit">Save results</button>

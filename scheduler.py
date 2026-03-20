@@ -92,14 +92,30 @@ def win_probability(team_a_ratings, team_b_ratings):
     return expected_score(r_a, r_b)
 
 
-def update_rankings_for_match(rankings, team1, team2, winner, score_team1=None, score_team2=None):
+def adjust_shares_for_friendly_rules(winner, t1, t2, s1, s2, e1, e2):
     """
+    Apply the same friendly-rule clamps as rating updates (score-based matches).
     winner: 1 if team1 won, 2 if team2 won.
-    Update all four players' ratings (Elo, K=32).
-    When score_team1 and score_team2 are provided, uses score-share for actual result
-    (so margin of victory affects rating change). Otherwise uses binary win/loss.
+    t1, t2: point totals; s1, s2: raw shares; e1, e2: expected shares for team1/team2.
     """
-    ratings = load_rankings()
+    # Friendly rule: if you win and hold opponent to 5 or fewer points, don't lose rating
+    if winner == 1 and t2 is not None and t2 <= 5 and s1 < e1:
+        s1 = e1
+    elif winner == 2 and t1 is not None and t1 <= 5 and s2 < e2:
+        s2 = e2
+    # Friendly rule: if you lose and scored 5 or fewer points, don't gain rating
+    if winner == 2 and t1 is not None and t1 <= 5 and s1 > e1:
+        s1 = e1
+    elif winner == 1 and t2 is not None and t2 <= 5 and s2 > e2:
+        s2 = e2
+    return s1, s2
+
+
+def apply_match_to_ratings_in_place(ratings, team1, team2, winner, score_team1=None, score_team2=None):
+    """
+    Mutate ratings dict with the same Elo/score-share + friendly rules as live updates.
+    New players in the match get DEFAULT_RATING before the update.
+    """
     for p in team1 + team2:
         if p not in ratings:
             ratings[p] = DEFAULT_RATING
@@ -119,29 +135,30 @@ def update_rankings_for_match(rankings, team1, team2, winner, score_team1=None, 
         s2 = t2 / total
         e1 = expected_score(r1, r2)
         e2 = 1 - e1
-        # Friendly rule: if you win and hold opponent to 5 or fewer points, don't lose rating
-        if winner == 1 and t2 is not None and t2 <= 5 and s1 < e1:
-            s1 = e1
-        elif winner == 2 and t1 is not None and t1 <= 5 and s2 < e2:
-            s2 = e2
-        # Friendly rule: if you lose and scored 5 or fewer points, don't gain rating
-        if winner == 2 and t1 is not None and t1 <= 5 and s1 > e1:
-            s1 = e1
-        elif winner == 1 and t2 is not None and t2 <= 5 and s2 > e2:
-            s2 = e2
+        s1, s2 = adjust_shares_for_friendly_rules(winner, t1, t2, s1, s2, e1, e2)
     else:
         s1 = 1 if winner == 1 else 0
         s2 = 1 if winner == 2 else 0
     e1 = expected_score(r1, r2)
     e2 = 1 - e1
     k = K_FACTOR
-    # Split point delta across the two players on each team
     delta1 = k * (s1 - e1) / 2
     delta2 = k * (s2 - e2) / 2
     for p in team1:
         ratings[p] = round_half_up(ratings[p] + delta1, 0)
     for p in team2:
         ratings[p] = round_half_up(ratings[p] + delta2, 0)
+
+
+def update_rankings_for_match(rankings, team1, team2, winner, score_team1=None, score_team2=None):
+    """
+    winner: 1 if team1 won, 2 if team2 won.
+    Update all four players' ratings (Elo, K=32).
+    When score_team1 and score_team2 are provided, uses score-share for actual result
+    (so margin of victory affects rating change). Otherwise uses binary win/loss.
+    """
+    ratings = load_rankings()
+    apply_match_to_ratings_in_place(ratings, team1, team2, winner, score_team1, score_team2)
     save_rankings(ratings)
     return ratings
 

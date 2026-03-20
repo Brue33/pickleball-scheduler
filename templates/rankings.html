@@ -2,6 +2,10 @@
 {% block title %}Rankings{% endblock %}
 {% block content %}
   <h1>Rankings</h1>
+  <p style="margin-bottom: 1rem;">
+    <button type="button" id="recent-games-btn" class="btn btn-secondary">Review recent games</button>
+  </p>
+
   {% if rankings %}
     <table>
       <thead>
@@ -32,6 +36,19 @@
   {% else %}
     <p>No rankings yet. <a href="{{ url_for('schedule') }}">Generate a schedule</a> and <a href="{{ url_for('results') }}">record some results</a> to get started.</p>
   {% endif %}
+
+  <div id="recent-games-modal" class="rating-gain-modal" hidden aria-hidden="true">
+    <div class="rating-gain-backdrop" aria-label="Close"></div>
+    <div class="rating-gain-content">
+      <h3 class="rating-gain-title">Review recent games</h3>
+      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Last 10 games from history, with rating change recomputed from stored results (same rules as live updates). May differ from the table if rankings were edited by hand.</p>
+      <label for="recent-games-name">Your name</label>
+      <input type="text" id="recent-games-name" placeholder="e.g. Bryan R" style="max-width: 16rem; margin-bottom: 0.5rem; display: block;">
+      <button type="button" id="recent-games-show" class="btn" style="margin-top: 0.25rem;">Show</button>
+      <div id="recent-games-results" class="rating-gain-results"></div>
+      <button type="button" class="recent-games-close btn btn-secondary" style="margin-top: 1rem;">Close</button>
+    </div>
+  </div>
 {% endblock %}
 
 {% block head %}
@@ -65,7 +82,7 @@
     .bio-modal-content {
       position: relative;
       background: var(--surface);
-      border: 1px solid #30363d;
+      border: 1px solid var(--court-line);
       border-radius: 8px;
       padding: 1.25rem 1.5rem;
       max-width: 28rem;
@@ -80,40 +97,162 @@
     }
     .bio-modal-body:empty::before { content: "No bio yet."; font-style: italic; }
     .bio-modal-close { margin-top: 0; }
+    .recent-game-card {
+      border: 1px solid var(--court-line);
+      border-radius: 6px;
+      padding: 0.65rem 0.75rem;
+      margin-bottom: 0.65rem;
+      background: var(--court);
+    }
+    .recent-game-card .meta { color: var(--muted); font-size: 0.8rem; margin-bottom: 0.35rem; }
+    .recent-game-card .delta-pos { color: var(--success); font-weight: 600; }
+    .recent-game-card .delta-neg { color: var(--error); font-weight: 600; }
+    .recent-game-card .delta-zero { color: var(--muted); font-weight: 600; }
   </style>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       var modal = document.getElementById('bio-modal');
-      if (!modal) return;
-      var playerEl = document.getElementById('bio-modal-player');
-      var textEl = document.getElementById('bio-modal-text');
-      var backdrop = modal.querySelector('.bio-modal-backdrop');
-      var closeBtn = modal.querySelector('.bio-modal-close');
+      if (modal) {
+        var playerEl = document.getElementById('bio-modal-player');
+        var textEl = document.getElementById('bio-modal-text');
+        var backdrop = modal.querySelector('.bio-modal-backdrop');
+        var closeBtn = modal.querySelector('.bio-modal-close');
 
-      function showBio(player, bio) {
-        bio = (bio || '').replace(/&#10;/g, '\n');
-        playerEl.textContent = player;
-        textEl.textContent = bio || '';
-        modal.hidden = false;
-        modal.setAttribute('aria-hidden', 'false');
-        closeBtn.focus();
-      }
+        function showBio(player, bio) {
+          bio = (bio || '').replace(/&#10;/g, '\n');
+          playerEl.textContent = player;
+          textEl.textContent = bio || '';
+          modal.hidden = false;
+          modal.setAttribute('aria-hidden', 'false');
+          closeBtn.focus();
+        }
 
-      function hideBio() {
-        modal.hidden = true;
-        modal.setAttribute('aria-hidden', 'true');
-      }
+        function hideBio() {
+          modal.hidden = true;
+          modal.setAttribute('aria-hidden', 'true');
+        }
 
-      document.querySelectorAll('.player-name-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-          showBio(btn.dataset.player || '', btn.dataset.bio || '');
+        document.querySelectorAll('.player-name-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            showBio(btn.dataset.player || '', btn.dataset.bio || '');
+          });
         });
-      });
-      if (backdrop) backdrop.addEventListener('click', hideBio);
-      if (closeBtn) closeBtn.addEventListener('click', hideBio);
-      modal.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') hideBio();
-      });
+        if (backdrop) backdrop.addEventListener('click', hideBio);
+        if (closeBtn) closeBtn.addEventListener('click', hideBio);
+        modal.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape') hideBio();
+        });
+      }
+
+      var rgBtn = document.getElementById('recent-games-btn');
+      var rgModal = document.getElementById('recent-games-modal');
+      var rgName = document.getElementById('recent-games-name');
+      var rgShow = document.getElementById('recent-games-show');
+      var rgResults = document.getElementById('recent-games-results');
+      var rgBackdrop = rgModal && rgModal.querySelector('.rating-gain-backdrop');
+      var rgClose = rgModal && rgModal.querySelector('.recent-games-close');
+      var rgUrl = {{ url_for('rankings_recent_games')|tojson }};
+
+      function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
+      function formatDate(iso) {
+        if (!iso) return '—';
+        try {
+          var d = new Date(iso);
+          if (isNaN(d.getTime())) return iso;
+          return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+        } catch (e) { return iso; }
+      }
+
+      function showRgModal() {
+        if (!rgModal) return;
+        rgModal.hidden = false;
+        rgModal.setAttribute('aria-hidden', 'false');
+        rgResults.innerHTML = '';
+        rgName.value = '';
+        rgName.focus();
+      }
+
+      function hideRgModal() {
+        if (!rgModal) return;
+        rgModal.hidden = true;
+        rgModal.setAttribute('aria-hidden', 'true');
+      }
+
+      function scoreLine(m) {
+        if (m.score_team1 != null && m.score_team1 !== '' && m.score_team2 != null && m.score_team2 !== '') {
+          return m.score_team1 + '–' + m.score_team2;
+        }
+        return 'Score not recorded';
+      }
+
+      function winnerLine(m) {
+        if (m.winner === 1) return 'Team 1 won';
+        if (m.winner === 2) return 'Team 2 won';
+        return '';
+      }
+
+      function deltaClass(d) {
+        if (d > 0) return 'delta-pos';
+        if (d < 0) return 'delta-neg';
+        return 'delta-zero';
+      }
+
+      function runRecentGames() {
+        var name = (rgName && rgName.value || '').trim();
+        if (!name) {
+          rgResults.innerHTML = '<p style="color: var(--muted);">Enter your name and click Show.</p>';
+          return;
+        }
+        rgResults.innerHTML = '<p style="color: var(--muted);">Loading…</p>';
+        fetch(rgUrl + '?name=' + encodeURIComponent(name))
+          .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, status: r.status, body: j }; }); })
+          .then(function(res) {
+            if (!res.ok) {
+              var msg = (res.body && res.body.message) || res.body.error || 'Request failed';
+              rgResults.innerHTML = '<p style="color: var(--error);">' + escapeHtml(msg) + '</p>';
+              return;
+            }
+            var matches = res.body.matches || [];
+            var player = res.body.player || name;
+            if (matches.length === 0) {
+              rgResults.innerHTML = '<p style="color: var(--muted);">No games in history for <strong>' + escapeHtml(player) + '</strong>.</p>';
+              return;
+            }
+            var parts = ['<p><strong>' + escapeHtml(player) + '</strong> — last ' + matches.length + ' game(s), newest first:</p>'];
+            matches.forEach(function(m) {
+              var t1 = (m.team1 || []).join(' & ');
+              var t2 = (m.team2 || []).join(' & ');
+              var d = m.delta;
+              var dc = deltaClass(d);
+              var deltaStr = (d > 0 ? '+' : '') + d;
+              parts.push(
+                '<div class="recent-game-card">' +
+                  '<div class="meta">' + escapeHtml(formatDate(m.date)) + '</div>' +
+                  '<div><strong>' + escapeHtml(t1) + '</strong> vs <strong>' + escapeHtml(t2) + '</strong></div>' +
+                  '<div style="margin-top: 0.25rem;">' + escapeHtml(scoreLine(m)) + ' · ' + escapeHtml(winnerLine(m)) + '</div>' +
+                  '<div style="margin-top: 0.4rem;">Rating: ' + m.rating_before + ' → ' + m.rating_after +
+                  ' <span class="' + dc + '">(' + deltaStr + ')</span></div>' +
+                '</div>'
+              );
+            });
+            rgResults.innerHTML = parts.join('');
+          })
+          .catch(function() {
+            rgResults.innerHTML = '<p style="color: var(--error);">Could not load. Try again.</p>';
+          });
+      }
+
+      if (rgBtn) rgBtn.addEventListener('click', showRgModal);
+      if (rgShow) rgShow.addEventListener('click', runRecentGames);
+      if (rgName) rgName.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); runRecentGames(); } });
+      if (rgBackdrop) rgBackdrop.addEventListener('click', hideRgModal);
+      if (rgClose) rgClose.addEventListener('click', hideRgModal);
+      if (rgModal) rgModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideRgModal(); });
     });
   </script>
 {% endblock %}
