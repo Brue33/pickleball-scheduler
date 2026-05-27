@@ -738,8 +738,10 @@ def build_mens_league_standings():
             "losses": s["losses"],
         })
     rows.sort(key=lambda r: (-r["points_scored"], -r["wins"], r["losses"], r["name"].lower()))
+    leader_points = rows[0]["points_scored"] if rows else 0
     for i, row in enumerate(rows):
         row["position"] = i + 1
+        row["points_behind"] = leader_points - row["points_scored"]
     return rows
 
 
@@ -762,8 +764,22 @@ def mens_league():
     )
 
 
+@app.route("/mens-league/standings/unlock", methods=["POST"])
+def mens_league_standings_unlock():
+    """Unlock weekly standings entry (schedule password)."""
+    if request.form.get("password") == SCHEDULE_PASSWORD:
+        session["schedule_authenticated"] = True
+        return redirect(url_for("mens_league") + "#enter-week")
+    flash("Incorrect password.", "error")
+    return redirect(url_for("mens_league") + "#enter-week")
+
+
 @app.route("/mens-league/standings/week", methods=["POST"])
 def mens_league_add_week():
+    if not session.get("schedule_authenticated") and request.form.get("password") != SCHEDULE_PASSWORD:
+        flash("Incorrect password. Enter the schedule password to save weekly results.", "error")
+        return redirect(url_for("mens_league") + "#enter-week")
+    session["schedule_authenticated"] = True
     week_label = (request.form.get("week_label") or "").strip()
     weeks = load_mens_league_weeks()
     if not week_label:

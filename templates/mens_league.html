@@ -33,13 +33,14 @@
     <div class="rating-gain-backdrop" data-close-modal="standings" aria-label="Close"></div>
     <div class="rating-gain-content" style="max-width: 36rem;">
       <h3 class="rating-gain-title">Standings</h3>
-      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Season totals (all weeks). Ranked 1–8 by total points, then wins.</p>
+      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Season totals (all weeks). Ranked 1–8 by total points, then wins. <strong>Behind</strong> is how many points each player trails the leader.</p>
       <table style="max-width: 100%;">
         <thead>
           <tr>
             <th>Pos.</th>
             <th>Player</th>
             <th>Points</th>
+            <th>Behind</th>
             <th>Wins</th>
             <th>Losses</th>
           </tr>
@@ -50,6 +51,7 @@
             <td>{{ row.position }}</td>
             <td>{{ row.name }}</td>
             <td>{{ row.points_scored }}</td>
+            <td>{% if row.points_behind == 0 %}—{% else %}{{ row.points_behind }}{% endif %}</td>
             <td>{{ row.wins }}</td>
             <td>{{ row.losses }}</td>
           </tr>
@@ -70,6 +72,15 @@
     <div class="rating-gain-backdrop" data-close-modal="enter-week" aria-label="Close"></div>
     <div class="rating-gain-content" style="max-width: 40rem;">
       <h3 class="rating-gain-title">Enter weekly results</h3>
+      {% if not session.get('schedule_authenticated') %}
+      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Enter the schedule password to continue.</p>
+      <form method="post" action="{{ url_for('mens_league_standings_unlock') }}">
+        <label for="mens_league_unlock_password">Password</label>
+        <input type="password" id="mens_league_unlock_password" name="password" autocomplete="current-password" autofocus style="max-width: 14rem;">
+        <button type="submit" class="btn" style="margin-top: 1rem;">Continue</button>
+        <button type="button" class="mens-league-enter-week-close btn btn-secondary" style="margin-top: 1rem; margin-left: 0.5rem;">Cancel</button>
+      </form>
+      {% else %}
       <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Enter each player's stats for this week. Totals are added to the season standings.</p>
       <form method="post" action="{{ url_for('mens_league_add_week') }}">
         <label for="week_label">Week label</label>
@@ -97,6 +108,7 @@
         <button type="submit" class="btn" style="margin-top: 1rem;">Save week</button>
         <button type="button" class="mens-league-enter-week-close btn btn-secondary" style="margin-top: 1rem; margin-left: 0.5rem;">Cancel</button>
       </form>
+      {% endif %}
     </div>
   </div>
 
@@ -150,6 +162,10 @@
 
       if (window.location.hash === '#standings') {
         standings.show();
+      }
+      if (window.location.hash === '#enter-week') {
+        standings.show();
+        enterWeek.show();
       }
     });
   </script>
