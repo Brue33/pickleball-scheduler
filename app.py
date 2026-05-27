@@ -40,6 +40,7 @@ PLAYERS_FILE = _DATA_DIR / "players.json"
 PLAYER_BIOS_FILE = _DATA_DIR / "player_bios.json"
 MATCH_HISTORY_FILE = _DATA_DIR / "match_history.json"
 AVAILABILITY_FILE = _DATA_DIR / "availability.json"
+MENS_LEAGUE_STANDINGS_FILE = _DATA_DIR / "mens_league_standings.json"
 PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
@@ -292,6 +293,15 @@ def get_next_wednesday():
     """Return the next upcoming Wednesday (or today if today is Wednesday)."""
     today = date.today()
     days_ahead = (2 - today.weekday() + 7) % 7
+    if days_ahead == 0:
+        return today
+    return today + timedelta(days=days_ahead)
+
+
+def get_next_thursday():
+    """Return the next upcoming Thursday (or today if today is Thursday)."""
+    today = date.today()
+    days_ahead = (3 - today.weekday() + 7) % 7
     if days_ahead == 0:
         return today
     return today + timedelta(days=days_ahead)
@@ -617,13 +627,179 @@ def generate_schedule_fixed_pairs(pairs, num_courts, num_rounds):
     return scheduled
 
 
+MENS_LEAGUE_ROSTER = {
+    1: "Matt O",
+    2: "Casey T",
+    3: "TJ F",
+    4: "Rob W",
+    5: "Bryan R",
+    6: "Ryan D",
+    7: "Austin M",
+    8: "Joe T",
+}
+
+# Each entry: (game #, court 7 matchup, court 8 matchup) as ((t1a, t1b), (t2a, t2b))
+MENS_LEAGUE_GAMES = [
+    (1, ((1, 2), (3, 8)), ((4, 7), (5, 6))),
+    (2, ((3, 4), (1, 7)), ((8, 6), (2, 5))),
+    (3, ((6, 2), (7, 8)), ((4, 1), (5, 3))),
+    (4, ((7, 5), (8, 4)), ((2, 3), (6, 1))),
+    (5, ((1, 3), (4, 2)), ((5, 8), (6, 7))),
+    (6, ((4, 5), (8, 1)), ((2, 7), (3, 6))),
+    (7, ((7, 3), (8, 2)), ((1, 5), (6, 4))),
+]
+
+
+def _mens_league_team(player_ids):
+    roster = MENS_LEAGUE_ROSTER
+    return f"{roster[player_ids[0]]} & {roster[player_ids[1]]}"
+
+
+def _mens_league_matchup(team1_ids, team2_ids):
+    return _mens_league_team(team1_ids), _mens_league_team(team2_ids)
+
+
+def build_mens_league_schedule():
+    games = []
+    for game_num, court_7, court_8 in MENS_LEAGUE_GAMES:
+        t1_7, t2_7 = _mens_league_matchup(*court_7)
+        t1_8, t2_8 = _mens_league_matchup(*court_8)
+        games.append({
+            "game": game_num,
+            "court_7": {"team1": t1_7, "team2": t2_7},
+            "court_8": {"team1": t1_8, "team2": t2_8},
+        })
+    return games
+
+
+def _mens_league_player_defaults():
+    return {name: {"points_scored": 0, "wins": 0, "losses": 0} for name in MENS_LEAGUE_ROSTER.values()}
+
+
+def load_mens_league_weeks():
+    """Load weekly result entries. Migrates legacy flat totals file if needed."""
+    if not MENS_LEAGUE_STANDINGS_FILE.exists():
+        return []
+    try:
+        with open(MENS_LEAGUE_STANDINGS_FILE) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+    if isinstance(data, dict) and "weeks" in data:
+        return data.get("weeks") or []
+    if isinstance(data, dict):
+        roster_names = set(MENS_LEAGUE_ROSTER.values())
+        if roster_names.intersection(data.keys()):
+            players = _mens_league_player_defaults()
+            for name in players:
+                if name in data and isinstance(data[name], dict):
+                    entry = data[name]
+                    players[name] = {
+                        "points_scored": int(entry.get("points_scored", 0) or 0),
+                        "wins": int(entry.get("wins", 0) or 0),
+                        "losses": int(entry.get("losses", 0) or 0),
+                    }
+            weeks = [{"label": "Imported", "players": players}]
+            save_mens_league_weeks(weeks)
+            return weeks
+    return []
+
+
+def save_mens_league_weeks(weeks):
+    with open(MENS_LEAGUE_STANDINGS_FILE, "w") as f:
+        json.dump({"weeks": weeks}, f, indent=2)
+
+
+def aggregate_mens_league_totals():
+    """Sum points, wins, and losses across all saved weeks."""
+    totals = _mens_league_player_defaults()
+    for week in load_mens_league_weeks():
+        players = week.get("players") or {}
+        for name in totals:
+            if name not in players or not isinstance(players[name], dict):
+                continue
+            entry = players[name]
+            totals[name]["points_scored"] += int(entry.get("points_scored", 0) or 0)
+            totals[name]["wins"] += int(entry.get("wins", 0) or 0)
+            totals[name]["losses"] += int(entry.get("losses", 0) or 0)
+    return totals
+
+
+def build_mens_league_standings():
+    """Season standings 1–8: most points, then wins; losses/name break remaining ties."""
+    raw = aggregate_mens_league_totals()
+    rows = []
+    for name in [MENS_LEAGUE_ROSTER[n] for n in sorted(MENS_LEAGUE_ROSTER)]:
+        s = raw[name]
+        rows.append({
+            "name": name,
+            "points_scored": s["points_scored"],
+            "wins": s["wins"],
+            "losses": s["losses"],
+        })
+    rows.sort(key=lambda r: (-r["points_scored"], -r["wins"], r["losses"], r["name"].lower()))
+    for i, row in enumerate(rows):
+        row["position"] = i + 1
+    return rows
+
+
+def mens_league_players_ordered():
+    return [(n, MENS_LEAGUE_ROSTER[n]) for n in sorted(MENS_LEAGUE_ROSTER)]
+
+
+@app.route("/mens-league")
+def mens_league():
+    roster = [MENS_LEAGUE_ROSTER[n] for n in sorted(MENS_LEAGUE_ROSTER)]
+    weeks = load_mens_league_weeks()
+    return render_template(
+        "mens_league.html",
+        mens_league_roster=roster,
+        mens_league_players=mens_league_players_ordered(),
+        mens_league_schedule=build_mens_league_schedule(),
+        mens_league_standings=build_mens_league_standings(),
+        mens_league_weeks=weeks,
+        next_week_label=f"Week {len(weeks) + 1}",
+    )
+
+
+@app.route("/mens-league/standings/week", methods=["POST"])
+def mens_league_add_week():
+    week_label = (request.form.get("week_label") or "").strip()
+    weeks = load_mens_league_weeks()
+    if not week_label:
+        week_label = f"Week {len(weeks) + 1}"
+    players = _mens_league_player_defaults()
+    for num, name in mens_league_players_ordered():
+        try:
+            points = int(request.form.get(f"points_{num}", 0) or 0)
+        except ValueError:
+            points = 0
+        try:
+            wins = int(request.form.get(f"wins_{num}", 0) or 0)
+        except ValueError:
+            wins = 0
+        try:
+            losses = int(request.form.get(f"losses_{num}", 0) or 0)
+        except ValueError:
+            losses = 0
+        players[name] = {
+            "points_scored": max(0, points),
+            "wins": max(0, wins),
+            "losses": max(0, losses),
+        }
+    weeks.append({"label": week_label, "players": players})
+    save_mens_league_weeks(weeks)
+    flash(f"Saved {week_label} results. Standings updated.", "success")
+    return redirect(url_for("mens_league") + "#standings")
+
+
 @app.route("/")
 def index():
     rankings = load_rankings()
-    next_wed = get_next_wednesday()
-    next_game_date_display = next_wed.strftime("%A, %B ") + _ordinal_day(next_wed)
+    next_thu = get_next_thursday()
+    next_game_date_display = next_thu.strftime("%A, %B ") + _ordinal_day(next_thu)
     published = load_published_schedule()
-    next_game_location_time = ((published or {}).get("time_location") or "").strip() or "Green Lake, 6:30pm"
+    next_game_location_time = ((published or {}).get("time_location") or "").strip() or "Green Lake, 6pm"
     return render_template(
         "index.html",
         rankings=rankings,
