@@ -8,7 +8,7 @@
   {% if draft_schedule %}
     <h2 style="font-size: 1.1rem;">Draft schedule — not yet live</h2>
     <p style="color: var(--muted); font-size: 0.9rem;">{{ draft_schedule.next_wednesday_display }} — {{ draft_schedule.players|join(", ") }}</p>
-    <p style="color: var(--muted); font-size: 0.9rem;">Edit any match using the dropdowns, then Save draft or Publish.</p>
+    <p style="color: var(--muted); font-size: 0.9rem;">Edit any match using the dropdowns. After changing players, click <strong>Update win chances</strong>, then Save draft or Publish.</p>
     <p style="margin-bottom: 0.75rem;">
       <button type="button" id="schedule-difficulty-btn" class="btn btn-secondary">Review schedule: hardest to easiest</button>
       {% if review_stats %}
@@ -91,6 +91,10 @@
         </tbody>
       </table>
       <p style="margin-top: 1rem;">
+        <button type="submit" formaction="{{ url_for('generate_update_win_chances') }}" class="btn-secondary">Update win chances</button>
+        — Recalculate win % for every match from your current lineups and live rankings.
+      </p>
+      <p style="margin-top: 0.5rem;">
         <button type="submit" formaction="{{ url_for('generate_save_draft') }}" class="btn-secondary">Save draft</button>
         — Save edits and keep editing.
       </p>

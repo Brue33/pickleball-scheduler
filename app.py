@@ -490,14 +490,15 @@ def _prob_value(e, default=0.5):
         return float(default)
 
 
-def _parse_draft_entries_from_form(draft):
+def _parse_draft_entries_from_form(draft, rankings=None):
     """
     Build schedule_entries from request form (team1_0_i, team1_1_i, team2_0_i, team2_1_i).
     Recompute prob and bye from draft players and rankings.
     Returns (schedule_entries, None) or (None, error_message).
     """
     players = draft["players"]
-    rankings = draft["rankings"]
+    if rankings is None:
+        rankings = draft["rankings"]
     entries = draft["schedule_entries"]
     result = []
     for i, e in enumerate(entries):
@@ -1245,17 +1246,9 @@ def generate_publish():
     return redirect(url_for("schedule"))
 
 
-@app.route("/generate/save-draft", methods=["POST"])
-def generate_save_draft():
-    """Save edited draft schedule from form."""
-    if not session.get("schedule_authenticated"):
-        flash("Please log in to the Generate tab first.", "error")
-        return redirect(url_for("generate_login"))
-    draft = load_draft_schedule()
-    if not draft:
-        flash("No draft schedule to save. Generate a schedule first.", "error")
-        return redirect(url_for("generate"))
-    entries, err = _parse_draft_entries_from_form(draft)
+def _save_draft_from_form(draft, rankings_for_probs=None, success_message="Draft saved. You can keep editing or Publish when ready."):
+    """Parse draft form, recompute win chances, persist draft. Returns redirect response."""
+    entries, err = _parse_draft_entries_from_form(draft, rankings=rankings_for_probs)
     if err:
         flash(err, "error")
         return redirect(url_for("generate"))
@@ -1269,12 +1262,13 @@ def generate_save_draft():
         drop_in_courts = max(1, min(8, drop_in_courts))
     except (ValueError, TypeError):
         drop_in_courts = 2
+    rankings_snapshot = dict(rankings_for_probs if rankings_for_probs is not None else draft["rankings"])
     save_draft_schedule(
         draft["date_key"],
         draft["next_wednesday_display"],
         draft["players"],
         entries,
-        draft["rankings"],
+        rankings_snapshot,
         time_location=time_location,
         num_courts=draft.get("num_courts", 2),
         rotate_partners=draft.get("rotate_partners", True),
@@ -1284,8 +1278,38 @@ def generate_save_draft():
         drop_in_time=drop_in_time,
         drop_in_courts=drop_in_courts,
     )
-    flash("Draft saved. You can keep editing or Publish when ready.", "success")
+    flash(success_message, "success")
     return redirect(url_for("generate"))
+
+
+@app.route("/generate/update-win-chances", methods=["POST"])
+def generate_update_win_chances():
+    """Recompute Team 1 win % for every match from current dropdowns and live rankings."""
+    if not session.get("schedule_authenticated"):
+        flash("Please log in to the Generate tab first.", "error")
+        return redirect(url_for("generate_login"))
+    draft = load_draft_schedule()
+    if not draft:
+        flash("No draft schedule. Generate a schedule first.", "error")
+        return redirect(url_for("generate"))
+    return _save_draft_from_form(
+        draft,
+        rankings_for_probs=load_rankings(),
+        success_message="Win chances updated for all matches using current rankings.",
+    )
+
+
+@app.route("/generate/save-draft", methods=["POST"])
+def generate_save_draft():
+    """Save edited draft schedule from form."""
+    if not session.get("schedule_authenticated"):
+        flash("Please log in to the Generate tab first.", "error")
+        return redirect(url_for("generate_login"))
+    draft = load_draft_schedule()
+    if not draft:
+        flash("No draft schedule to save. Generate a schedule first.", "error")
+        return redirect(url_for("generate"))
+    return _save_draft_from_form(draft)
 
 
 @app.route("/generate/regenerate", methods=["GET", "POST"])
