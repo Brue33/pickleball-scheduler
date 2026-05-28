@@ -24,14 +24,27 @@ fi
 
 echo "Backing up from $RENDER_URL ..."
 
-curl -fsS "$RENDER_URL/export/player_bios?key=$EXPORT_KEY" -o player_bios.json
-curl -fsS "$RENDER_URL/export/rankings?key=$EXPORT_KEY" -o rankings.json
-curl -fsS "$RENDER_URL/export/players?key=$EXPORT_KEY" -o players.json
-curl -fsS "$RENDER_URL/export/match_history?key=$EXPORT_KEY" -o match_history.json
-curl -fsS "$RENDER_URL/export/play_history?key=$EXPORT_KEY" -o play_history.json
-curl -fsS "$RENDER_URL/export/availability?key=$EXPORT_KEY" -o availability.json
-curl -fsS "$RENDER_URL/export/published_schedule?key=$EXPORT_KEY" -o published_schedule.json
-curl -fsS "$RENDER_URL/export/drop_in_schedule?key=$EXPORT_KEY" -o drop_in_schedule.json
-curl -fsS "$RENDER_URL/export/mens_league_standings?key=$EXPORT_KEY" -o mens_league_standings.json
+backup_curl() {
+  local endpoint="$1"
+  local outfile="$2"
+  local tmp="${outfile}.tmp"
+  curl -fsS "$RENDER_URL/export/${endpoint}?key=$EXPORT_KEY" -o "$tmp"
+  if grep -q '"error"' "$tmp" 2>/dev/null && grep -q 'Forbidden' "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    echo "Error: $endpoint returned Forbidden. Deploy latest code or check EXPORT_KEY / schedule password."
+    exit 1
+  fi
+  mv "$tmp" "$outfile"
+}
+
+backup_curl "player_bios" "player_bios.json"
+backup_curl "rankings" "rankings.json"
+backup_curl "players" "players.json"
+backup_curl "match_history" "match_history.json"
+backup_curl "play_history" "play_history.json"
+backup_curl "availability" "availability.json"
+backup_curl "published_schedule" "published_schedule.json"
+backup_curl "drop_in_schedule" "drop_in_schedule.json"
+backup_curl "mens_league_standings" "mens_league_standings.json"
 
 echo "Backup complete. Files updated: player_bios.json, rankings.json, players.json, match_history.json, play_history.json, availability.json, published_schedule.json, drop_in_schedule.json, mens_league_standings.json"

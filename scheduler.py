@@ -34,8 +34,14 @@ DROP_IN_SCHEDULE_FILE = _BASE / "drop_in_schedule.json"
 def load_rankings():
     if not RANKINGS_FILE.exists():
         return {}
-    with open(RANKINGS_FILE) as f:
-        return json.load(f)
+    try:
+        with open(RANKINGS_FILE) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(data, dict) or "error" in data:
+        return {}
+    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, (int, float))}
 
 
 def save_rankings(rankings):
