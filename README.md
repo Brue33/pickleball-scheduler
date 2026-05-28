@@ -129,6 +129,7 @@ python scheduler.py reset-history
 - `rankings.json` – Created automatically; stores each player’s rating.
 - `play_history.json` – Tracks how often each pair played together/against.
 - `player_bios.json` – Player bios (shown on Rankings). Edit via Players → Edit player bios.
+- `mens_league_standings.json` – Men's League weekly results (points, wins, losses per player).
 
 ### Keeping data when you push / deploy
 
@@ -149,37 +150,40 @@ These are then read and written under that directory, so they survive code updat
 - **Current rankings** (`rankings.json`)
 - **Partner/opponent history** (`play_history.json`)
 - **Player bios** (`player_bios.json`)
-- Availability, published schedule, etc.
+- Availability, published schedule, drop-in schedule, Men's League standings, etc.
 
 **Option B – Commit data to git**  
-You can commit the data files to the repo so they are pushed and pulled with your code: `players.json`, `player_bios.json`, `rankings.json`, `match_history.json`, `play_history.json`, etc. Then deploy as usual; the updated repo will include the latest data.
+You can commit the data files to the repo so they are pushed and pulled with your code: `players.json`, `player_bios.json`, `rankings.json`, `match_history.json`, `play_history.json`, `mens_league_standings.json`, etc. Then deploy as usual; the updated repo will include the latest data.
 
 ### Backing up data from Render
 
-If you host on Render (or any ephemeral host) without a persistent disk, data changed on the live site is lost on the next deploy unless you pull it into the repo first. Use the export endpoints to backup before pushing new code.
+If you host on Render (or any ephemeral host) without a persistent disk, data changed on the live site is lost on the next deploy unless you pull it into the repo first.
 
-1. **On Render:** In your Web Service → **Environment**, add:
-   - **Key:** `EXPORT_SECRET`
-   - **Value:** a long random string (e.g. from a password generator). Do not commit this to git.
-   Redeploy once so the app has the new routes.
+**You do not need `EXPORT_SECRET` on Render.** If that env var is not set, backups use the same password as the **Generate** tab (`PBGames26`). The backup script uses that automatically.
 
-2. **Before pushing when the site has new data:** From your machine, set your site URL and secret, then pull each JSON into the project directory (or run `./backup_from_render.sh` if you use the script):
+**Before pushing when the site has new data:**
 
-   ```bash
-   cd pickleball_scheduler
-   export RENDER_URL="https://YOUR-SERVICE-NAME.onrender.com"
-   export EXPORT_KEY="your-EXPORT_SECRET-value"
+```bash
+cd pickleball_scheduler
+export RENDER_URL="https://YOUR-SERVICE-NAME.onrender.com"
+./backup_from_render.sh
+```
 
-   curl -s "$RENDER_URL/export/player_bios?key=$EXPORT_KEY" -o player_bios.json
-   curl -s "$RENDER_URL/export/rankings?key=$EXPORT_KEY" -o rankings.json
-   curl -s "$RENDER_URL/export/players?key=$EXPORT_KEY" -o players.json
-   curl -s "$RENDER_URL/export/match_history?key=$EXPORT_KEY" -o match_history.json
-   curl -s "$RENDER_URL/export/play_history?key=$EXPORT_KEY" -o play_history.json
-   curl -s "$RENDER_URL/export/availability?key=$EXPORT_KEY" -o availability.json
-   curl -s "$RENDER_URL/export/published_schedule?key=$EXPORT_KEY" -o published_schedule.json
-   ```
+That pulls schedules, rankings, past games, availability, drop-in schedule, and **Men's League weekly standings** into local JSON files.
 
-   Then commit and push as usual. Treat the export URL and key like a password; anyone with the key can download your data.
+Optional: if you later add `EXPORT_SECRET` on Render for a separate backup password, set `export EXPORT_KEY="your-secret"` before running the script.
+
+Then commit and push as usual:
+
+```bash
+git add *.json
+git commit -m "Back up live data before deploy."
+git push origin main
+```
+
+**Note:** The Men's League **game schedule** (matchups) lives in `app.py` and is deployed with your code. Only **weekly standings entries** are stored in `mens_league_standings.json`.
+
+**Optional (stricter):** You can set `EXPORT_SECRET` on Render to use a dedicated backup key instead of the schedule password. Anyone who knows the schedule password can download data until you do that.
 
 ## Summary
 

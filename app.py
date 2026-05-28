@@ -289,15 +289,6 @@ def append_match(team1, team2, winner, score_team1=None, score_team2=None, prob_
         json.dump({"matches": matches}, f, indent=2)
 
 
-def get_next_wednesday():
-    """Return the next upcoming Wednesday (or today if today is Wednesday)."""
-    today = date.today()
-    days_ahead = (2 - today.weekday() + 7) % 7
-    if days_ahead == 0:
-        return today
-    return today + timedelta(days=days_ahead)
-
-
 def get_next_thursday():
     """Return the next upcoming Thursday (or today if today is Thursday)."""
     today = date.today()
@@ -305,6 +296,16 @@ def get_next_thursday():
     if days_ahead == 0:
         return today
     return today + timedelta(days=days_ahead)
+
+
+def get_next_wednesday():
+    """Weekly game day (Thursdays). Kept for Slack handler compatibility."""
+    return get_next_thursday()
+
+
+def format_game_day_display(d):
+    """e.g. Thursday, June 5th"""
+    return d.strftime("%A, %B ") + _ordinal_day(d)
 
 
 def _ordinal_day(d):
@@ -333,18 +334,55 @@ def save_availability(by_date):
         json.dump(by_date, f, indent=2)
 
 
+def availability_for_current_week(availability_all):
+    """Availability for the upcoming Thursday; merges legacy Wednesday keys for this week."""
+    next_thu = get_next_thursday()
+    date_key = next_thu.isoformat()
+    legacy_key = (next_thu - timedelta(days=1)).isoformat()
+    current = dict(availability_all.get(date_key, {}))
+    legacy = availability_all.get(legacy_key, {})
+    if isinstance(legacy, dict):
+        for player, status in legacy.items():
+            if player not in current:
+                current[player] = status
+    return date_key, current
+
+
+def _normalize_schedule_display(data):
+    """Ensure schedule header shows the correct game day (Thursday) from date_key."""
+    if not data:
+        return data
+    data = dict(data)
+    dk = data.get("date_key")
+    if dk:
+        try:
+            d = date.fromisoformat(dk)
+            if d.weekday() == 2:
+                d = d + timedelta(days=1)
+                data["date_key"] = d.isoformat()
+            data["next_wednesday_display"] = format_game_day_display(d)
+        except ValueError:
+            pass
+    return data
+
+
 def load_published_schedule():
     """Load the published schedule for this week; return None if missing or not this week."""
-    next_wed = get_next_wednesday()
-    date_key = next_wed.isoformat()
+    next_thu = get_next_thursday()
+    date_key = next_thu.isoformat()
+    legacy_wed_key = (next_thu - timedelta(days=1)).isoformat()
     if not PUBLISHED_SCHEDULE_FILE.exists():
         return None
     try:
         with open(PUBLISHED_SCHEDULE_FILE) as f:
             data = json.load(f)
-        if data.get("date_key") != date_key:
+        stored_key = data.get("date_key")
+        if stored_key not in (date_key, legacy_wed_key):
             return None
-        return data
+        if stored_key == legacy_wed_key:
+            data = dict(data)
+            data["date_key"] = date_key
+        return _normalize_schedule_display(data)
     except (json.JSONDecodeError, OSError):
         return None
 
@@ -395,16 +433,21 @@ def save_drop_in_schedule(day_of_week, time_str, num_courts, players, schedule_e
 
 def load_draft_schedule():
     """Load draft schedule for this week; return None if missing or not this week."""
-    next_wed = get_next_wednesday()
-    date_key = next_wed.isoformat()
+    next_thu = get_next_thursday()
+    date_key = next_thu.isoformat()
+    legacy_wed_key = (next_thu - timedelta(days=1)).isoformat()
     if not DRAFT_SCHEDULE_FILE.exists():
         return None
     try:
         with open(DRAFT_SCHEDULE_FILE) as f:
             data = json.load(f)
-        if data.get("date_key") != date_key:
+        stored_key = data.get("date_key")
+        if stored_key not in (date_key, legacy_wed_key):
             return None
-        return data
+        if stored_key == legacy_wed_key:
+            data = dict(data)
+            data["date_key"] = date_key
+        return _normalize_schedule_display(data)
     except (json.JSONDecodeError, OSError):
         return None
 
@@ -813,7 +856,7 @@ def mens_league_add_week():
 def index():
     rankings = load_rankings()
     next_thu = get_next_thursday()
-    next_game_date_display = next_thu.strftime("%A, %B ") + _ordinal_day(next_thu)
+    next_game_date_display = format_game_day_display(next_thu)
     published = load_published_schedule()
     next_game_location_time = ((published or {}).get("time_location") or "").strip() or "Green Lake, 6pm"
     return render_template(
@@ -853,8 +896,8 @@ def slack_command():
 def schedule():
     rankings = load_rankings()
     player_list = load_players_list()
-    next_wed = get_next_wednesday()
-    next_wed_str = next_wed.strftime("%A, %B %d, %Y")
+    next_game = get_next_thursday()
+    next_game_str = format_game_day_display(next_game)
     published = load_published_schedule()
     drop_in = load_drop_in_schedule()
     if drop_in:
@@ -878,7 +921,7 @@ def schedule():
         "schedule.html",
         rankings=rankings,
         player_list=player_list,
-        next_wednesday=next_wed_str,
+        next_wednesday=next_game_str,
         published_schedule=published,
         drop_in_schedule=drop_in,
         schedule_rating_data=schedule_rating_data,
@@ -888,13 +931,12 @@ def schedule():
 
 @app.route("/availability", methods=["GET", "POST"])
 def availability():
-    """Availability for next Wednesday. List all players with In/Out/Not Answered. Locked after schedule is generated unless password entered."""
+    """Availability for next Thursday. List all players with In/Out/Not Answered. Locked after schedule is generated unless password entered."""
     player_list = load_players_list()
-    next_wed = get_next_wednesday()
-    next_wed_str = next_wed.strftime("%A, %B %d, %Y")
-    date_key = next_wed.isoformat()
+    next_game = get_next_thursday()
+    next_game_str = format_game_day_display(next_game)
     availability_all = load_availability()
-    availability = availability_all.get(date_key, {})
+    date_key, availability = availability_for_current_week(availability_all)
     published = load_published_schedule()
     unlocked_week = session.get("availability_edit_unlocked_week")
     read_only = bool(published) and (unlocked_week != date_key)
@@ -908,6 +950,9 @@ def availability():
             if date_key not in availability_all:
                 availability_all[date_key] = {}
             availability_all[date_key][p] = val
+        legacy_key = (get_next_thursday() - timedelta(days=1)).isoformat()
+        if legacy_key in availability_all and legacy_key != date_key:
+            del availability_all[legacy_key]
         save_availability(availability_all)
         flash("Availability saved.", "success")
         return redirect(url_for("availability"))
@@ -917,7 +962,7 @@ def availability():
     return render_template(
         "availability.html",
         player_list=player_list,
-        next_wednesday=next_wed_str,
+        next_game_day=next_game_str,
         date_key=date_key,
         availability=availability_display,
         read_only=read_only,
@@ -927,7 +972,7 @@ def availability():
 @app.route("/availability/unlock", methods=["POST"])
 def availability_unlock():
     """Unlock availability editing after schedule is generated (password PBGames26)."""
-    date_key = get_next_wednesday().isoformat()
+    date_key = get_next_thursday().isoformat()
     if request.form.get("availability_unlock_password", "").strip() != SCHEDULE_PASSWORD:
         flash("Incorrect password. Use the schedule password to edit availability after the schedule is generated.", "error")
         return redirect(url_for("availability"))
@@ -1003,14 +1048,15 @@ def generate():
         flash("Please log in to the Generate tab first.", "error")
         return redirect(url_for("generate_login"))
 
-    next_wed = get_next_wednesday()
-    date_key = next_wed.isoformat()
+    next_game = get_next_thursday()
+    date_key = next_game.isoformat()
+    game_day_display = format_game_day_display(next_game)
 
     if request.method == "GET":
         player_list = load_players_list()
         schedule_players_unlocked = session.get("schedule_players_unlocked", False)
         availability_all = load_availability()
-        availability = availability_all.get(date_key, {})
+        _, availability = availability_for_current_week(availability_all)
         players_in = [p for p in player_list if availability.get(p) == "in"]
         draft = load_draft_schedule()
         schedule_difficulty = []
@@ -1023,7 +1069,7 @@ def generate():
         return render_template(
             "generate.html",
             player_list=player_list,
-            next_wednesday=next_wed.strftime("%A, %B %d, %Y"),
+            next_wednesday=game_day_display,
             schedule_players_unlocked=schedule_players_unlocked,
             players_in=players_in,
             draft_schedule=draft,
@@ -1075,7 +1121,7 @@ def generate():
             add_round_court_and_bye(schedule_entries, players, num_courts=num_courts)
             save_draft_schedule(
                 date_key,
-                next_wed.strftime("%A, %B %d, %Y"),
+                game_day_display,
                 players,
                 schedule_entries,
                 rankings,
@@ -1121,7 +1167,7 @@ def generate():
             add_round_court_and_bye(schedule_entries, all_in_pairs, num_courts=num_courts)
             save_draft_schedule(
                 date_key,
-                next_wed.strftime("%A, %B %d, %Y"),
+                game_day_display,
                 all_in_pairs,
                 schedule_entries,
                 rankings,
@@ -1184,9 +1230,10 @@ def generate_publish():
         clear_draft_schedule()
         flash("Drop-in schedule is now published on the Schedule tab.", "success")
         return redirect(url_for("schedule"))
+    publish_day = date.fromisoformat(draft["date_key"])
     save_published_schedule(
         draft["date_key"],
-        draft["next_wednesday_display"],
+        format_game_day_display(publish_day),
         draft["players"],
         schedule_entries,
         draft["rankings"],
@@ -1487,7 +1534,12 @@ def rankings_recent_games():
 
 
 def _export_key_valid():
-    return request.args.get("key") == os.environ.get("EXPORT_SECRET")
+    """Accept EXPORT_SECRET if set on the server; otherwise the schedule password."""
+    key = request.args.get("key", "")
+    export_secret = (os.environ.get("EXPORT_SECRET") or "").strip()
+    if export_secret:
+        return key == export_secret
+    return key == SCHEDULE_PASSWORD
 
 
 @app.route("/export/player_bios")
@@ -1566,6 +1618,22 @@ def export_drop_in_schedule():
         return jsonify({"error": "Forbidden"}), 403
     data = load_drop_in_schedule()
     return jsonify(data) if data else jsonify({})
+
+
+@app.route("/export/mens_league_standings")
+def export_mens_league_standings():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    if not MENS_LEAGUE_STANDINGS_FILE.exists():
+        return jsonify({"weeks": []})
+    try:
+        with open(MENS_LEAGUE_STANDINGS_FILE) as f:
+            data = json.load(f)
+        if isinstance(data, dict) and "weeks" in data:
+            return jsonify(data)
+        return jsonify({"weeks": load_mens_league_weeks()})
+    except (json.JSONDecodeError, OSError):
+        return jsonify({"weeks": []})
 
 
 def min_score_rating_gain(schedule_prob_team1, for_team=1):

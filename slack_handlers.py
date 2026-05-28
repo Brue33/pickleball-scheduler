@@ -3,22 +3,37 @@ Slack slash command handlers for the pickleball scheduler.
 Each handler returns a dict for Slack's JSON response (text or blocks).
 """
 
+from datetime import timedelta
+
+
+def _availability_for_game_day(availability_all, game_day):
+    """Thursday availability; includes legacy Wednesday key for the same week."""
+    date_key = game_day.isoformat()
+    legacy_key = (game_day - timedelta(days=1)).isoformat()
+    current = dict(availability_all.get(date_key, {}))
+    legacy = availability_all.get(legacy_key, {})
+    if isinstance(legacy, dict):
+        for player, status in legacy.items():
+            if player not in current:
+                current[player] = status
+    return date_key, current
+
 
 def handle_pb_in(text, player_list, load_availability, save_availability, get_next_wednesday):
-    """Mark a player as in for next Wednesday. Usage: /pb-in Alice"""
+    """Mark a player as in for next Thursday. Usage: /pb-in Alice"""
     name = (text or "").strip()
     if not name:
         return {"response_type": "ephemeral", "text": "Usage: `/pb-in YourName` (e.g. /pb-in Alice)"}
     if name not in player_list:
         return {"response_type": "ephemeral", "text": f"Unknown player: {name}. Players on list: {', '.join(player_list[:15])}{'...' if len(player_list) > 15 else ''}"}
-    next_wed = get_next_wednesday()
-    date_key = next_wed.isoformat()
+    next_game = get_next_wednesday()
+    date_key = next_game.isoformat()
     availability_all = load_availability()
     if date_key not in availability_all:
         availability_all[date_key] = {}
     availability_all[date_key][name] = "in"
     save_availability(availability_all)
-    return {"response_type": "ephemeral", "text": f"Marked *{name}* as *In* for {next_wed.strftime('%A, %b %d')}."}
+    return {"response_type": "ephemeral", "text": f"Marked *{name}* as *In* for {next_game.strftime('%A, %b %d')}."}
 
 
 def handle_pb_out(text, player_list, load_availability, save_availability, get_next_wednesday):
@@ -28,23 +43,22 @@ def handle_pb_out(text, player_list, load_availability, save_availability, get_n
         return {"response_type": "ephemeral", "text": "Usage: `/pb-out YourName`"}
     if name not in player_list:
         return {"response_type": "ephemeral", "text": f"Unknown player: {name}. Players: {', '.join(player_list[:15])}{'...' if len(player_list) > 15 else ''}"}
-    next_wed = get_next_wednesday()
-    date_key = next_wed.isoformat()
+    next_game = get_next_wednesday()
+    date_key = next_game.isoformat()
     availability_all = load_availability()
     if date_key not in availability_all:
         availability_all[date_key] = {}
     availability_all[date_key][name] = "out"
     save_availability(availability_all)
-    return {"response_type": "ephemeral", "text": f"Marked *{name}* as *Out* for {next_wed.strftime('%A, %b %d')}."}
+    return {"response_type": "ephemeral", "text": f"Marked *{name}* as *Out* for {next_game.strftime('%A, %b %d')}."}
 
 
 def handle_pb_availability(player_list, load_availability, get_next_wednesday):
-    """List who's in/out for next Wednesday."""
-    next_wed = get_next_wednesday()
-    date_key = next_wed.isoformat()
+    """List who's in/out for next Thursday."""
+    next_game = get_next_wednesday()
     availability_all = load_availability()
-    availability = availability_all.get(date_key, {})
-    lines = [f"*Games on {next_wed.strftime('%A, %B %d')}*"]
+    _, availability = _availability_for_game_day(availability_all, next_game)
+    lines = [f"*Games on {next_game.strftime('%A, %B %d')}*"]
     for p in player_list:
         status = availability.get(p)
         if status == "in":
@@ -87,13 +101,12 @@ def handle_pb_history(load_match_history, limit=10):
 
 
 def handle_pb_schedule(player_list, load_availability, get_next_wednesday, load_published_schedule, add_round_court_and_bye):
-    """Show next Wednesday; if a schedule is published, show it. Otherwise who's in/out and hint for generating."""
-    next_wed = get_next_wednesday()
-    date_key = next_wed.isoformat()
+    """Show next Thursday; if a schedule is published, show it. Otherwise who's in/out and hint for generating."""
+    next_game = get_next_wednesday()
     published = load_published_schedule()
     if published:
         add_round_court_and_bye(published["schedule_entries"], published["players"])
-        lines = [f"*Schedule for {published.get('next_wednesday_display', next_wed.strftime('%A, %B %d'))}*"]
+        lines = [f"*Schedule for {published.get('next_wednesday_display', next_game.strftime('%A, %B %d'))}*"]
         if published.get("time_location"):
             lines.append(f"Time & location: {published['time_location']}")
         lines.append(f"Players: {', '.join(published['players'])}")
@@ -112,10 +125,10 @@ def handle_pb_schedule(player_list, load_availability, get_next_wednesday, load_
         lines.append("\nRecord results from the *Schedule* tab on the web app.")
         return {"response_type": "ephemeral", "text": "\n".join(lines)}
     availability_all = load_availability()
-    availability = availability_all.get(date_key, {})
+    _, availability = _availability_for_game_day(availability_all, next_game)
     in_count = sum(1 for p in player_list if availability.get(p) == "in")
     text = (
-        f"*Next games: {next_wed.strftime('%A, %B %d')}*\n"
+        f"*Next games: {next_game.strftime('%A, %B %d')}*\n"
         f"No schedule published yet for this week.\n"
         f"Who's in: {in_count} | Use `/pb-in YourName` or `/pb-out YourName` to update.\n"
         f"Use `/pb-availability` to see the full list.\n"
