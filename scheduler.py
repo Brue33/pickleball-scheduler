@@ -22,8 +22,9 @@ def round_half_up(x, decimals=0):
 
 DEFAULT_RATING = 1300
 K_FACTOR = 32
-# Blowout-friendly bucket: loser scores 0–5 are rated as if the loser scored this many points.
+# Blowout-friendly bucket: loser scores 0–5 on a win use fixed small gain (same for 11–0 … 11–5).
 FRIENDLY_BLOWOUT_LOSER_PTS = 5
+FRIENDLY_BLOWOUT_WINNER_DELTA = 1  # rating points per player on winning team
 _DATA_DIR = os.environ.get("PICKLEBALL_DATA_DIR")
 _BASE = Path(_DATA_DIR) if _DATA_DIR else Path(__file__).resolve().parent
 RANKINGS_FILE = _BASE / "rankings.json"
@@ -100,23 +101,29 @@ def win_probability(team_a_ratings, team_b_ratings):
     return expected_score(r_a, r_b)
 
 
+def blowout_winner_share(e_win):
+    """Winning-team share when loser scored 0–5 — fixed small gain per player (K*(s-e)/2 = delta)."""
+    s = e_win + (2.0 * FRIENDLY_BLOWOUT_WINNER_DELTA) / K_FACTOR
+    return min(max(s, 0.0), 1.0)
+
+
 def adjust_shares_for_friendly_rules(winner, t1, t2, s1, s2, e1, e2):
     """
     Friendly blowout bucket for rating updates (score-based matches).
-    If the losing side scored 0–5, treat the game as if the loser scored
-    FRIENDLY_BLOWOUT_LOSER_PTS (11–5 style) so 11–0 through 11–5 are equivalent.
-    When the loser has 6+ points, use normal score-share (s1, s2 unchanged).
+    If the losing side scored 0–5, all such wins (11–0 … 11–5) use the same fixed
+    small gain for the winner — heavy favorites are not penalized vs 11–5 math.
+    When the loser has 6+ points, use normal score-share (close games can hurt favorites).
     winner: 1 if team1 won, 2 if team2 won.
     """
     if t1 is None or t2 is None:
         return s1, s2
     norm = FRIENDLY_BLOWOUT_LOSER_PTS
     if winner == 1 and t2 <= norm:
-        total = t1 + norm
-        return t1 / total, norm / total
+        s_win = blowout_winner_share(e1)
+        return s_win, 1.0 - s_win
     if winner == 2 and t1 <= norm:
-        total = norm + t2
-        return norm / total, t2 / total
+        s_win = blowout_winner_share(e2)
+        return 1.0 - s_win, s_win
     return s1, s2
 
 

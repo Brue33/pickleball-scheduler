@@ -49,7 +49,7 @@
       <div class="rating-gain-backdrop" aria-label="Close"></div>
       <div class="rating-gain-content">
         <h3 class="rating-gain-title">What score do I need to gain rating?</h3>
-        <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Friendly blowout rule: wins where you hold them to 5 or less (11–0 through 11–5) all count the same, rated as 11–5. If they score 6+, normal rules apply.</p>
+        <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Win and hold them to 5 or less — 11–0 through 11–5 all give the same small gain. If they score 6+, normal rules apply (close games can hurt favorites).</p>
         <label for="rating-gain-name">Your name</label>
         <input type="text" id="rating-gain-name" placeholder="e.g. Bryan R" style="max-width: 16rem; margin-bottom: 0.5rem;">
         <button type="button" id="rating-gain-show" class="btn" style="margin-top: 0.25rem;">Show</button>
@@ -164,15 +164,14 @@
           html += '<div class="gain-advice-proj"><strong>' + projLabel +
             '</strong> (' + advice.win_pct + '%)</div>';
         }
-        if (advice.example_score) {
-          html += '<div class="gain-advice-win"><span class="gain-line">Example: ' +
-            escapeHtml(advice.example_score) + '</span></div>';
+        var main = advice.primary || advice.win || '';
+        if (main) {
+          html += '<div class="gain-advice-main">' + escapeHtml(main) + '</div>';
         }
-        html += '<div class="gain-advice-win">' + escapeHtml(advice.win || '') + '</div>';
-        if (advice.win_note) {
-          html += '<div class="gain-advice-note">' + escapeHtml(advice.win_note) + '</div>';
+        var extra = advice.secondary || advice.win_note || '';
+        if (extra) {
+          html += '<div class="gain-advice-note">' + escapeHtml(extra) + '</div>';
         }
-        html += '<div class="gain-advice-lose">' + escapeHtml(advice.lose || '') + '</div>';
         html += '</div>';
         return html;
       }
