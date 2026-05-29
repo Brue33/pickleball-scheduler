@@ -126,22 +126,11 @@ def save_match_history_and_rebuild_rankings(matches_newest_first, starting_ratin
     """
     chrono = list(reversed(matches_newest_first))
     old_rankings = load_rankings()
-    if starting_ratings is None:
-        saved = load_replay_starting_ratings()
-        starting_ratings = saved if saved else None
     if not chrono:
         save_match_history([])
         save_rankings({p: DEFAULT_RATING for p in old_rankings.keys()} if old_rankings else {})
         return
-    players = set(old_rankings.keys())
-    for m in chrono:
-        for p in (m.get("team1") or []) + (m.get("team2") or []):
-            if p:
-                players.add(p)
-    if starting_ratings is not None:
-        ratings = {p: int(starting_ratings.get(p, DEFAULT_RATING)) for p in players}
-    else:
-        ratings = {p: DEFAULT_RATING for p in players}
+    ratings = initialize_replay_ratings(starting_ratings, extra_players=old_rankings.keys())
     rebuilt_chrono = []
     for m in chrono:
         t1 = [str(x).strip() for x in (m.get("team1") or [])]
@@ -239,14 +228,30 @@ def save_replay_starting_ratings(ratings_dict):
         json.dump({k: int(v) for k, v in ratings_dict.items()}, f, indent=2)
 
 
-def replay_seed_rating(ratings, player):
-    """Player rating at start of next replayed match."""
-    if player in ratings:
-        return int(ratings[player])
-    seeds = load_replay_starting_ratings()
-    if player in seeds:
-        return int(seeds[player])
-    return DEFAULT_RATING
+def _players_in_match_history():
+    players = set()
+    for m in load_match_history():
+        for p in (m.get("team1") or []) + (m.get("team2") or []):
+            if p:
+                players.add(p)
+    return players
+
+
+def initialize_replay_ratings(starting_ratings=None, extra_players=None):
+    """
+    Rating state before replaying stored games.
+    Used by rebuild and review so both follow the same rules.
+    """
+    players = set(_players_in_match_history())
+    players |= set(load_rankings().keys())
+    if extra_players:
+        players |= set(extra_players)
+    if starting_ratings is None:
+        saved = load_replay_starting_ratings()
+        starting_ratings = saved if saved else None
+    if starting_ratings is not None:
+        return {p: int(starting_ratings.get(p, DEFAULT_RATING)) for p in players}
+    return {p: DEFAULT_RATING for p in players}
 
 
 def all_rebuild_player_names():
@@ -302,8 +307,9 @@ def recent_games_rating_review(player_query, max_games=10):
     if not name:
         return None, {"error": "not_found", "message": "No player matched that name."}
     current_rating = int(load_rankings().get(name, DEFAULT_RATING))
+    ratings = initialize_replay_ratings()
+    starting_rating = int(ratings.get(name, DEFAULT_RATING))
     matches_chrono = list(reversed(load_match_history()))
-    ratings = {}
     rows = []
     for m in matches_chrono:
         team1 = m.get("team1") or []
@@ -314,7 +320,7 @@ def recent_games_rating_review(player_query, max_games=10):
         s1 = m.get("score_team1")
         s2 = m.get("score_team2")
         in_match = name in team1 or name in team2
-        before = int(replay_seed_rating(ratings, name)) if in_match else None
+        before = int(ratings[name]) if in_match else None
         apply_match_to_ratings_in_place(ratings, team1, team2, winner, s1, s2)
         if in_match:
             after = int(ratings[name])
@@ -331,9 +337,18 @@ def recent_games_rating_review(player_query, max_games=10):
                     "delta": after - before,
                 }
             )
+    replayed_rating = int(ratings.get(name, starting_rating))
     last_n = rows[-max_games:]
     last_n = list(reversed(last_n))
-    return name, {"matches": last_n, "current_rating": current_rating}
+    return name, {
+        "matches": last_n,
+        "current_rating": current_rating,
+        "replayed_rating": replayed_rating,
+        "starting_rating": starting_rating,
+        "total_games": len(rows),
+        "last_n_delta_sum": sum(m["delta"] for m in last_n),
+        "full_delta_sum": replayed_rating - starting_rating,
+    }
 
 
 def append_match(team1, team2, winner, score_team1=None, score_team2=None, prob_team1=None):
