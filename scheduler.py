@@ -191,6 +191,14 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, 
     if games_per_round is None:
         games_per_round = max(4, n)
 
+    # Each round can run at most one game per 4 players, and at most num_courts games.
+    if num_courts and num_courts >= 1:
+        max_games_per_round = min(num_courts, n // 4)
+        if max_games_per_round < 1:
+            raise ValueError("Need at least 4 players for one court.")
+    else:
+        max_games_per_round = games_per_round
+
     scheduled = []
     used_opponent = defaultdict(lambda: defaultdict(int))
     games_played = defaultdict(int)
@@ -250,7 +258,7 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, 
     for _ in range(games_per_round * 15):
         if len(scheduled) >= games_per_round:
             break
-        round_size = num_courts if (num_courts and num_courts >= 1) else games_per_round
+        round_size = max_games_per_round
         round_start = (len(scheduled) // round_size) * round_size if round_size else 0
         players_in_this_round = set()
         for (t1, t2) in scheduled[round_start:]:

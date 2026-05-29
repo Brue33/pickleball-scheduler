@@ -1124,6 +1124,9 @@ def generate():
             if not players:
                 flash("Select at least one player from the list, or add names below.", "error")
                 return redirect(url_for("generate"))
+            if len(players) < 4:
+                flash("Need at least 4 players to generate a schedule.", "error")
+                return redirect(url_for("generate"))
             # Number of games is per court; total games = games * num_courts
             total_games = (games * num_courts) if games else None
             schedule_list, rankings = generate_schedule(players, games_per_round=total_games, num_courts=num_courts)

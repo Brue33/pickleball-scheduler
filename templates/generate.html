@@ -163,7 +163,7 @@
     <form method="post" action="{{ url_for('generate') }}" id="generate-form">
       <label for="num_courts">Number of courts</label>
       <input type="number" id="num_courts" name="num_courts" min="1" max="8" value="2" style="width: 4rem;">
-      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Maximizes games per round (4 players per court). Byes depend on number of players.</p>
+      <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Maximizes games per round (4 players per court). With 8 players and 2 courts, both courts run each round. With 5–7 players, only one court runs per round and others get byes.</p>
 
       <p style="margin-top: 1rem;">
         <input type="checkbox" id="rotate_partners" name="rotate_partners" checked>
