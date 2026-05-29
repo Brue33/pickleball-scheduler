@@ -41,7 +41,7 @@
     <div class="rating-gain-backdrop" aria-label="Close"></div>
     <div class="rating-gain-content">
       <h3 class="rating-gain-title">Review recent games</h3>
-      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Last 10 games from history, with rating change recomputed from stored results (same rules as live updates). May differ from the table if rankings were edited by hand.</p>
+      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Last 10 games from history. Rating changes use stored scores and the same rules as live updates; levels are aligned to your current rating on the table above.</p>
       <label for="recent-games-name">Your name</label>
       <input type="text" id="recent-games-name" placeholder="e.g. Bryan R" style="max-width: 16rem; margin-bottom: 0.5rem; display: block;">
       <button type="button" id="recent-games-show" class="btn" style="margin-top: 0.25rem;">Show</button>
@@ -219,11 +219,16 @@
             }
             var matches = res.body.matches || [];
             var player = res.body.player || name;
+            var currentRating = res.body.current_rating;
             if (matches.length === 0) {
               rgResults.innerHTML = '<p style="color: var(--muted);">No games in history for <strong>' + escapeHtml(player) + '</strong>.</p>';
               return;
             }
-            var parts = ['<p><strong>' + escapeHtml(player) + '</strong> — last ' + matches.length + ' game(s), newest first:</p>'];
+            var parts = ['<p><strong>' + escapeHtml(player) + '</strong>'];
+            if (currentRating != null) {
+              parts.push(' — current rating: <strong>' + currentRating + '</strong>');
+            }
+            parts.push(' — last ' + matches.length + ' game(s), newest first:</p>');
             matches.forEach(function(m) {
               var t1 = (m.team1 || []).join(' & ');
               var t2 = (m.team2 || []).join(' & ');

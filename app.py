@@ -7,6 +7,7 @@ import json
 import hmac
 import hashlib
 import os
+import re
 from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
 
@@ -224,11 +225,14 @@ def resolve_player_display_name(query):
 def recent_games_rating_review(player_query, max_games=10):
     """
     Replay all matches in chronological order and return the last max_games involving the player,
-    with rating before/after each (from replay, not live rankings.json).
+    with rating before/after each. Per-game deltas come from replaying stored scores; absolute
+    ratings are shifted so the newest game ends at the player's current ranking in rankings.json.
     """
     name = resolve_player_display_name(player_query)
     if not name:
         return None, {"error": "not_found", "message": "No player matched that name."}
+    current_rankings = load_rankings()
+    current_rating = int(current_rankings.get(name, DEFAULT_RATING))
     matches_chrono = list(reversed(load_match_history()))
     ratings = {}
     rows = []
@@ -258,9 +262,15 @@ def recent_games_rating_review(player_query, max_games=10):
                     "delta": after - before,
                 }
             )
+    replay_final = int(ratings.get(name, DEFAULT_RATING))
+    offset = current_rating - replay_final
+    if offset:
+        for row in rows:
+            row["rating_before"] += offset
+            row["rating_after"] += offset
     last_n = rows[-max_games:]
     last_n = list(reversed(last_n))
-    return name, {"matches": last_n}
+    return name, {"matches": last_n, "current_rating": current_rating}
 
 
 def append_match(team1, team2, winner, score_team1=None, score_team2=None, prob_team1=None):
@@ -914,8 +924,8 @@ def schedule():
                 "court": e.get("court", "A"),
                 "team1": list(e.get("team1", [])),
                 "team2": list(e.get("team2", [])),
-                "team1_gain": min_score_rating_gain(prob, for_team=1),
-                "team2_gain": min_score_rating_gain(prob, for_team=2),
+                "team1_gain": rating_gain_advice(prob, for_team=1),
+                "team2_gain": rating_gain_advice(prob, for_team=2),
             })
         schedule_difficulty[:] = compute_schedule_difficulty(published["schedule_entries"], published["players"])
     return render_template(
@@ -1554,7 +1564,11 @@ def rankings_recent_games():
     resolved, payload = recent_games_rating_review(q, max_games=10)
     if resolved is None:
         return jsonify(payload), 404
-    return jsonify({"player": resolved, "matches": payload["matches"]})
+    return jsonify({
+        "player": resolved,
+        "matches": payload["matches"],
+        "current_rating": payload.get("current_rating"),
+    })
 
 
 def _export_key_valid():
@@ -1725,6 +1739,41 @@ def min_score_rating_gain(schedule_prob_team1, for_team=1):
     if for_team == 1:
         return find_min_win(team1_wins_gain)
     return find_min_win(team2_wins_gain)
+
+
+def rating_gain_advice(schedule_prob_team1, for_team=1):
+    """Plain-language win/lose score guidance for the rating-gain modal."""
+    min_win = min_score_rating_gain(schedule_prob_team1, for_team)
+    matchup = re.match(r"^(\d+)-(\d+) or better$", min_win.strip())
+    if matchup:
+        you_pts = int(matchup.group(1))
+        them_pts = int(matchup.group(2))
+        win = (
+            f"If you win: you need at least {you_pts} points on your side, and the other "
+            f"team should score at least {them_pts} (for example {you_pts}–{them_pts})."
+        )
+        if them_pts >= 6:
+            win_note = (
+                "Winning while holding them to 5 or fewer won't cost you rating, but it "
+                "usually won't gain rating either — let them score 6+ when you can."
+            )
+        else:
+            win_note = ""
+    else:
+        win = f"If you win: {min_win}."
+        win_note = ""
+
+    lose = (
+        "If you lose: you will generally lose rating. Friendly rule — if you score "
+        "5 or fewer points in a loss, that can limit how much you drop."
+    )
+
+    return {
+        "example_score": min_win.replace(" or better", ""),
+        "win": win,
+        "win_note": win_note,
+        "lose": lose,
+    }
 
 
 @app.template_filter("date_long_month_short_year")
