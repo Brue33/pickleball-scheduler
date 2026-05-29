@@ -22,6 +22,8 @@ def round_half_up(x, decimals=0):
 
 DEFAULT_RATING = 1300
 K_FACTOR = 32
+# Blowout-friendly bucket: loser scores 0–5 are rated as if the loser scored this many points.
+FRIENDLY_BLOWOUT_LOSER_PTS = 5
 _DATA_DIR = os.environ.get("PICKLEBALL_DATA_DIR")
 _BASE = Path(_DATA_DIR) if _DATA_DIR else Path(__file__).resolve().parent
 RANKINGS_FILE = _BASE / "rankings.json"
@@ -100,20 +102,21 @@ def win_probability(team_a_ratings, team_b_ratings):
 
 def adjust_shares_for_friendly_rules(winner, t1, t2, s1, s2, e1, e2):
     """
-    Apply the same friendly-rule clamps as rating updates (score-based matches).
+    Friendly blowout bucket for rating updates (score-based matches).
+    If the losing side scored 0–5, treat the game as if the loser scored
+    FRIENDLY_BLOWOUT_LOSER_PTS (11–5 style) so 11–0 through 11–5 are equivalent.
+    When the loser has 6+ points, use normal score-share (s1, s2 unchanged).
     winner: 1 if team1 won, 2 if team2 won.
-    t1, t2: point totals; s1, s2: raw shares; e1, e2: expected shares for team1/team2.
     """
-    # Friendly rule: if you win and hold opponent to 5 or fewer points, don't lose rating
-    if winner == 1 and t2 is not None and t2 <= 5 and s1 < e1:
-        s1 = e1
-    elif winner == 2 and t1 is not None and t1 <= 5 and s2 < e2:
-        s2 = e2
-    # Friendly rule: if you lose and scored 5 or fewer points, don't gain rating
-    if winner == 2 and t1 is not None and t1 <= 5 and s1 > e1:
-        s1 = e1
-    elif winner == 1 and t2 is not None and t2 <= 5 and s2 > e2:
-        s2 = e2
+    if t1 is None or t2 is None:
+        return s1, s2
+    norm = FRIENDLY_BLOWOUT_LOSER_PTS
+    if winner == 1 and t2 <= norm:
+        total = t1 + norm
+        return t1 / total, norm / total
+    if winner == 2 and t1 <= norm:
+        total = norm + t2
+        return norm / total, t2 / total
     return s1, s2
 
 

@@ -49,7 +49,7 @@
       <div class="rating-gain-backdrop" aria-label="Close"></div>
       <div class="rating-gain-content">
         <h3 class="rating-gain-title">What score do I need to gain rating?</h3>
-        <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">You must <strong>win</strong> the game to gain rating. We show how many points you need to score — and how many the other team should score — using the same friendly rules as recorded games.</p>
+        <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Friendly blowout rule: wins where you hold them to 5 or less (11–0 through 11–5) all count the same, rated as 11–5. If they score 6+, normal rules apply.</p>
         <label for="rating-gain-name">Your name</label>
         <input type="text" id="rating-gain-name" placeholder="e.g. Bryan R" style="max-width: 16rem; margin-bottom: 0.5rem;">
         <button type="button" id="rating-gain-show" class="btn" style="margin-top: 0.25rem;">Show</button>
@@ -156,10 +156,18 @@
       function formatGainAdvice(advice) {
         if (!advice) return '<span class="gain-line">—</span>';
         if (typeof advice === 'string') {
-          return '<span class="gain-line">' + advice + '</span>';
+          return '<span class="gain-line">' + escapeHtml(advice) + '</span>';
         }
         var html = '<div class="gain-advice">';
-        html += '<div class="gain-advice-win"><span class="gain-line">Example: ' + escapeHtml(advice.example_score || '') + '</span></div>';
+        if (advice.projected && advice.win_pct != null) {
+          var projLabel = advice.projected === 'win' ? 'Projected to win' : 'Projected to lose';
+          html += '<div class="gain-advice-proj"><strong>' + projLabel +
+            '</strong> (' + advice.win_pct + '%)</div>';
+        }
+        if (advice.example_score) {
+          html += '<div class="gain-advice-win"><span class="gain-line">Example: ' +
+            escapeHtml(advice.example_score) + '</span></div>';
+        }
         html += '<div class="gain-advice-win">' + escapeHtml(advice.win || '') + '</div>';
         if (advice.win_note) {
           html += '<div class="gain-advice-note">' + escapeHtml(advice.win_note) + '</div>';

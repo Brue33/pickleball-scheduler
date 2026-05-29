@@ -7,7 +7,6 @@ import json
 import hmac
 import hashlib
 import os
-import re
 from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
 
@@ -22,6 +21,7 @@ from scheduler import (
     format_schedule,
     DEFAULT_RATING,
     win_probability,
+    FRIENDLY_BLOWOUT_LOSER_PTS,
     HISTORY_FILE as SCHEDULER_HISTORY_FILE,
     PUBLISHED_SCHEDULE_FILE,
     DRAFT_SCHEDULE_FILE,
@@ -1841,102 +1841,132 @@ def export_mens_league_standings():
         return jsonify({"weeks": []})
 
 
+def _schedule_e1(schedule_prob_team1):
+    """Team 1 expected share from schedule probability (matches integer % on Schedule tab)."""
+    if schedule_prob_team1 is None:
+        return 0.5
+    try:
+        return int(float(schedule_prob_team1) * 100) / 100.0
+    except (TypeError, ValueError):
+        return 0.5
+
+
+def _win_side_gains_rating(schedule_prob_team1, for_team, opponent_pts, my_pts=11):
+    """True if for_team gains rating on an 11-x win (same rules as live updates)."""
+    e1 = _schedule_e1(schedule_prob_team1)
+    e2 = 1.0 - e1
+    if for_team == 1:
+        tot = my_pts + opponent_pts
+        s1, s2 = my_pts / tot, opponent_pts / tot
+        s1, s2 = adjust_shares_for_friendly_rules(1, my_pts, opponent_pts, s1, s2, e1, e2)
+        return s1 > e1
+    tot = opponent_pts + my_pts
+    s1, s2 = opponent_pts / tot, my_pts / tot
+    s1, s2 = adjust_shares_for_friendly_rules(2, opponent_pts, my_pts, s1, s2, e1, e2)
+    return s2 > e2
+
+
+def _loss_side_gains_rating(schedule_prob_team1, for_team, my_pts, opponent_pts=11):
+    """True if for_team gains rating on a loss with my_pts scored (same rules as live updates)."""
+    e1 = _schedule_e1(schedule_prob_team1)
+    e2 = 1.0 - e1
+    if for_team == 1:
+        t1, t2 = my_pts, opponent_pts
+        winner = 2
+    else:
+        t1, t2 = opponent_pts, my_pts
+        winner = 1
+    tot = t1 + t2
+    s1, s2 = t1 / tot, t2 / tot
+    s1, s2 = adjust_shares_for_friendly_rules(winner, t1, t2, s1, s2, e1, e2)
+    if for_team == 1:
+        return s1 > e1
+    return s2 > e2
+
+
 def min_score_rating_gain(schedule_prob_team1, for_team=1):
     """
-    Minimum **win** (you score 11 vs opponent t, win by 2 rules) so your side **gains** rating,
-    using the same friendly-rule share clamps as real updates.
-
-    Friendly rule: if you win and hold the opponent to 5 or fewer, you won't lose rating (share
-    is clamped up to expected). We prefer scores where the opponent scores at least 6 when
-    those still gain, matching the league's friendly play intent.
-
+    Shortest win description that gains rating, using friendly blowout bucket + normal scores.
     schedule_prob_team1: Team 1 win probability from the schedule (same basis as the % shown).
     for_team: 1 = advice for team 1, 2 = advice for team 2.
     """
-    if schedule_prob_team1 is None:
-        e1 = 0.5
-    else:
-        try:
-            # Match the integer win % shown on the schedule tab, e.g. 65% -> 0.65
-            e1 = int(float(schedule_prob_team1) * 100) / 100.0
-        except (TypeError, ValueError):
-            e1 = 0.5
-    e2 = 1.0 - e1
-
-    if for_team == 1:
-        e_own = e1
-    else:
-        e_own = e2
-
-    if e_own >= 1.0:
-        return "11-6 or better"
-    if e_own <= 0:
-        return "11-9 or better"
-
-    def team1_wins_gain(opponent_pts, my_pts=11):
-        tot = my_pts + opponent_pts
-        s1_raw = my_pts / tot
-        s2_raw = opponent_pts / tot
-        s1, s2 = adjust_shares_for_friendly_rules(1, my_pts, opponent_pts, s1_raw, s2_raw, e1, e2)
-        return s1 > e1
-
-    def team2_wins_gain(opponent_pts, my_pts=11):
-        tot = opponent_pts + my_pts
-        s1_raw = opponent_pts / tot
-        s2_raw = my_pts / tot
-        s1, s2 = adjust_shares_for_friendly_rules(2, opponent_pts, my_pts, s1_raw, s2_raw, e1, e2)
-        return s2 > e2
-
-    def find_min_win(wins_gain):
-        """Easiest 11-x win that gains rating; prefer opponent scoring 6+ (friendly rule)."""
-        for t_opp in range(9, 5, -1):
-            if wins_gain(t_opp):
-                return f"11-{t_opp} or better"
-        for t_opp in range(5, -1, -1):
-            if wins_gain(t_opp):
-                if t_opp <= 5 and wins_gain(6):
-                    return "11-6 or better"
-                return f"11-{t_opp} or better"
-        if wins_gain(10, 12):
-            return "12-10 or better"
-        if wins_gain(11, 13):
-            return "13-11 or better"
+    norm = FRIENDLY_BLOWOUT_LOSER_PTS
+    if _win_side_gains_rating(schedule_prob_team1, for_team, norm):
+        return f"11-{norm} or better (hold to {norm} or less)"
+    for opp in range(norm + 1, 10):
+        if _win_side_gains_rating(schedule_prob_team1, for_team, opp):
+            return f"11-{opp} or better"
+    if _win_side_gains_rating(schedule_prob_team1, for_team, 10, 12):
+        return "12-10 or better"
+    if _win_side_gains_rating(schedule_prob_team1, for_team, 11, 13):
         return "13-11 or better"
-
-    if for_team == 1:
-        return find_min_win(team1_wins_gain)
-    return find_min_win(team2_wins_gain)
+    return "13-11 or better"
 
 
 def rating_gain_advice(schedule_prob_team1, for_team=1):
     """Plain-language win/lose score guidance for the rating-gain modal."""
-    min_win = min_score_rating_gain(schedule_prob_team1, for_team)
-    matchup = re.match(r"^(\d+)-(\d+) or better$", min_win.strip())
-    if matchup:
-        you_pts = int(matchup.group(1))
-        them_pts = int(matchup.group(2))
+    e1 = _schedule_e1(schedule_prob_team1)
+    e_own = e1 if for_team == 1 else 1.0 - e1
+    win_pct = int(round(e_own * 100))
+    projected = "win" if e_own >= 0.5 else "lose"
+    norm = FRIENDLY_BLOWOUT_LOSER_PTS
+
+    blowout_win_gains = _win_side_gains_rating(schedule_prob_team1, for_team, norm)
+    min_normal_win = None
+    for opp in range(norm + 1, 10):
+        if _win_side_gains_rating(schedule_prob_team1, for_team, opp):
+            min_normal_win = opp
+            break
+
+    if blowout_win_gains:
         win = (
-            f"If you win: you need at least {you_pts} points on your side, and the other "
-            f"team should score at least {them_pts} (for example {you_pts}–{them_pts})."
+            f"If you win and hold them to {norm} or less, any score from 11–0 through "
+            f"11–{norm} counts the same (rated as 11–{norm}) — a small fixed gain."
         )
-        if them_pts >= 6:
+        if min_normal_win is not None:
             win_note = (
-                "Winning while holding them to 5 or fewer won't cost you rating, but it "
-                "usually won't gain rating either — let them score 6+ when you can."
+                f"If they score {norm + 1}+, normal rules apply — their points can help "
+                f"them or hurt you (e.g. 11–{min_normal_win} or closer)."
             )
         else:
-            win_note = ""
+            win_note = (
+                f"If they score {norm + 1}+, you may need a closer win to gain rating."
+            )
+        example_score = f"11-{norm}"
+    elif min_normal_win is not None:
+        win = (
+            f"If you win: 11–{min_normal_win} or better (when they score {norm + 1}+, "
+            f"normal score rules apply)."
+        )
+        win_note = ""
+        example_score = f"11-{min_normal_win}"
     else:
+        min_win = min_score_rating_gain(schedule_prob_team1, for_team)
         win = f"If you win: {min_win}."
         win_note = ""
+        example_score = min_win.replace(" or better (hold to 5 or less)", "").replace(" or better", "")
 
-    lose = (
-        "If you lose: you will generally lose rating. Friendly rule — if you score "
-        "5 or fewer points in a loss, that can limit how much you drop."
-    )
+    min_loss_gain_pts = None
+    for pts in range(norm + 1, 12):
+        if _loss_side_gains_rating(schedule_prob_team1, for_team, pts):
+            min_loss_gain_pts = pts
+            break
+
+    if min_loss_gain_pts is not None:
+        lose = (
+            f"If you lose: scoring {norm} or fewer is treated the same as {norm}–11. "
+            f"Scoring {min_loss_gain_pts}+ in a loss may still gain rating."
+        )
+    else:
+        lose = (
+            f"If you lose: scoring {norm} or fewer is treated the same for rating "
+            f"(as if you scored {norm})."
+        )
 
     return {
-        "example_score": min_win.replace(" or better", ""),
+        "projected": projected,
+        "win_pct": win_pct,
+        "example_score": example_score,
         "win": win,
         "win_note": win_note,
         "lose": lose,
