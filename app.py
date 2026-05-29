@@ -225,14 +225,12 @@ def resolve_player_display_name(query):
 def recent_games_rating_review(player_query, max_games=10):
     """
     Replay all matches in chronological order and return the last max_games involving the player,
-    with rating before/after each. Per-game deltas come from replaying stored scores; absolute
-    ratings are shifted so the newest game ends at the player's current ranking in rankings.json.
+    with rating before/after each (same replay rules as rebuild rankings).
     """
     name = resolve_player_display_name(player_query)
     if not name:
         return None, {"error": "not_found", "message": "No player matched that name."}
-    current_rankings = load_rankings()
-    current_rating = int(current_rankings.get(name, DEFAULT_RATING))
+    current_rating = int(load_rankings().get(name, DEFAULT_RATING))
     matches_chrono = list(reversed(load_match_history()))
     ratings = {}
     rows = []
@@ -262,12 +260,6 @@ def recent_games_rating_review(player_query, max_games=10):
                     "delta": after - before,
                 }
             )
-    replay_final = int(ratings.get(name, DEFAULT_RATING))
-    offset = current_rating - replay_final
-    if offset:
-        for row in rows:
-            row["rating_before"] += offset
-            row["rating_after"] += offset
     last_n = rows[-max_games:]
     last_n = list(reversed(last_n))
     return name, {"matches": last_n, "current_rating": current_rating}
@@ -1555,7 +1547,38 @@ def rankings():
     ) if rankings else []
     bios = load_player_bios()
     wins_losses = get_wins_losses_by_player()
-    return render_template("rankings.html", rankings=sorted_rankings, bios=bios, wins_losses=wins_losses)
+    match_count = len(load_match_history())
+    return render_template(
+        "rankings.html",
+        rankings=sorted_rankings,
+        bios=bios,
+        wins_losses=wins_losses,
+        match_count=match_count,
+    )
+
+
+@app.route("/rankings/rebuild", methods=["POST"])
+def rankings_rebuild():
+    """Replay all stored games from 1300 and rebuild rankings.json (schedule password)."""
+    if request.form.get("password", "").strip() != SCHEDULE_PASSWORD:
+        flash("Incorrect password.", "error")
+        return redirect(url_for("rankings"))
+    matches = load_match_history()
+    if not matches:
+        flash("No past games in history to rebuild from.", "error")
+        return redirect(url_for("rankings"))
+    try:
+        save_match_history_and_rebuild_rankings(matches)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("rankings"))
+    after = load_rankings()
+    flash(
+        f"Rankings rebuilt from {len(matches)} stored game(s) (each player replayed from 1300). "
+        f"{len(after)} player(s) updated.",
+        "success",
+    )
+    return redirect(url_for("rankings"))
 
 
 @app.route("/rankings/recent-games")

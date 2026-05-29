@@ -6,6 +6,14 @@
     <button type="button" id="recent-games-btn" class="btn btn-secondary">Review recent games</button>
   </p>
 
+  <form method="post" action="{{ url_for('rankings_rebuild') }}" style="margin-bottom: 1.5rem; padding: 1rem; background: var(--surface); border: 1px solid var(--court-line); border-radius: 6px; max-width: 28rem;" onsubmit="return confirm('Rebuild all rankings by replaying every stored game from 1300?');">
+    <p style="margin: 0 0 0.5rem 0; font-weight: 600;">Rebuild rankings from history</p>
+    <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Replays all {{ match_count }} stored game(s) in date order and overwrites the ratings table. Use this if Review recent games does not match your rating. Each player starts at 1300 for the replay.</p>
+    <label for="rebuild_password">Schedule password</label>
+    <input type="password" id="rebuild_password" name="password" placeholder="Password" style="max-width: 14rem; margin-right: 0.5rem;">
+    <button type="submit" class="btn btn-secondary" style="margin-top: 0.25rem;">Rebuild rankings</button>
+  </form>
+
   {% if rankings %}
     <table>
       <thead>
@@ -41,7 +49,7 @@
     <div class="rating-gain-backdrop" aria-label="Close"></div>
     <div class="rating-gain-content">
       <h3 class="rating-gain-title">Review recent games</h3>
-      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Last 10 games from history. Rating changes use stored scores and the same rules as live updates; levels are aligned to your current rating on the table above.</p>
+      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Last 10 games from history. Rating changes use stored scores and the same rules as live updates. After a rebuild, these should match the table above.</p>
       <label for="recent-games-name">Your name</label>
       <input type="text" id="recent-games-name" placeholder="e.g. Bryan R" style="max-width: 16rem; margin-bottom: 0.5rem; display: block;">
       <button type="button" id="recent-games-show" class="btn" style="margin-top: 0.25rem;">Show</button>
