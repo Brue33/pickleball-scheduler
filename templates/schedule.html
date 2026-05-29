@@ -159,10 +159,9 @@
           return '<span class="gain-line">' + escapeHtml(advice) + '</span>';
         }
         var html = '<div class="gain-advice">';
-        if (advice.projected && advice.win_pct != null) {
+        if (advice.projected) {
           var projLabel = advice.projected === 'win' ? 'Projected to win' : 'Projected to lose';
-          html += '<div class="gain-advice-proj"><strong>' + projLabel +
-            '</strong> (' + advice.win_pct + '%)</div>';
+          html += '<div class="gain-advice-proj"><strong>' + projLabel + '</strong></div>';
         }
         var main = advice.primary || advice.win || '';
         if (main) {
