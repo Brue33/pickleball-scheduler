@@ -1903,6 +1903,24 @@ def min_score_rating_gain(schedule_prob_team1, for_team=1):
     return "13-11 or better"
 
 
+def _format_min_score_phrase(min_pts):
+    """Short loss-side advice, e.g. 'Score 6 or more points' or 'Score 11 points'."""
+    if min_pts is None:
+        return None
+    if min_pts >= 11:
+        return "Score 11 points"
+    return f"Score {min_pts} or more points"
+
+
+def _format_hold_opponent_phrase(hold_y):
+    """Short win-side advice; blowout bucket always shown as 5 or less."""
+    if hold_y is None:
+        return None
+    if hold_y <= FRIENDLY_BLOWOUT_LOSER_PTS:
+        return "Hold your opponents to 5 or less"
+    return f"Hold your opponents to {hold_y} or less"
+
+
 def rating_gain_advice(schedule_prob_team1, for_team=1):
     """Plain-language win/lose score guidance for the rating-gain modal."""
     e1 = _schedule_e1(schedule_prob_team1)
@@ -1918,46 +1936,26 @@ def rating_gain_advice(schedule_prob_team1, for_team=1):
             min_loss_gain_pts = pts
             break
 
-    hold_max = norm if blowout_win_gains else None
-    blowout_win_line = (
-        f"If you win, hold your opponents to {norm} points or less — "
-        f"11–0 through 11–{norm} all give the same small rating gain."
-    )
-    blowout_close_note = (
-        f"If they score {norm + 1}+, normal rules apply — a close win "
-        f"(like 11–9) can cost you rating and help them."
-    )
-    loss_gain_line = (
-        f"If you lose, you could still gain rating if you score "
-        f"{min_loss_gain_pts} or more points."
-        if min_loss_gain_pts is not None
-        else f"If you lose, scoring {norm} or fewer is treated the same for rating."
-    )
+    hold_line = _format_hold_opponent_phrase(norm if blowout_win_gains else None)
+    score_line = _format_min_score_phrase(min_loss_gain_pts)
 
     if projected == "win":
-        primary = blowout_win_line if blowout_win_gains else (
-            f"If you win, normal score rules apply — you need a strong enough "
-            f"win to gain rating at {win_pct}% expected."
-        )
-        secondary = blowout_close_note if blowout_win_gains else None
-        example_score = f"11-{norm}" if blowout_win_gains else ""
+        primary = hold_line or "Win decisively enough to gain rating"
+        secondary = None
     else:
-        primary = loss_gain_line
-        secondary = blowout_win_line if blowout_win_gains else None
-        example_score = f"11-{norm}" if blowout_win_gains else ""
+        primary = score_line or f"Score {norm} or fewer is treated the same in a loss"
+        secondary = None
 
     return {
         "projected": projected,
         "win_pct": win_pct,
-        "example_score": example_score,
         "primary": primary,
         "secondary": secondary,
-        "hold_opponent_max": hold_max,
+        "hold_opponent_max": norm if blowout_win_gains else None,
         "min_loss_gain_pts": min_loss_gain_pts,
-        # Legacy keys for any older callers
         "win": primary,
         "win_note": secondary or "",
-        "lose": loss_gain_line,
+        "lose": score_line or "",
     }
 
 
