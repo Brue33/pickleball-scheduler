@@ -4,38 +4,10 @@
   <h1>Rankings</h1>
   <p style="margin-bottom: 1rem;">
     <button type="button" id="recent-games-btn" class="btn btn-secondary">Review recent games</button>
-  </p>
-
-  <form method="post" action="{{ url_for('rankings_rebuild') }}" id="rebuild-form" style="margin-bottom: 1.5rem; padding: 1rem; background: var(--surface); border: 1px solid var(--court-line); border-radius: 6px; max-width: 36rem;">
-    <p style="margin: 0 0 0.5rem 0; font-weight: 600;">Rebuild rankings from history</p>
-    <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Replays all {{ match_count }} stored game(s) in date order. Set each player's rating <em>before</em> those games are applied, then rebuild overwrites the table.</p>
-    {% if rebuild_players %}
-    <p style="margin: 0 0 0.5rem 0;">
-      <button type="button" id="rebuild-fill-current" class="btn btn-secondary" style="margin-right: 0.5rem;">Fill from current table</button>
-      <button type="button" id="rebuild-fill-default" class="btn btn-secondary">Reset all to {{ default_rating }}</button>
-    </p>
-    <table style="max-width: 100%; margin-bottom: 0.75rem;">
-      <thead>
-        <tr><th>Player</th><th>Starting rating</th></tr>
-      </thead>
-      <tbody>
-        {% for player in rebuild_players %}
-        <tr>
-          <td>{{ player }}</td>
-          <td>
-            <input type="hidden" name="start_player_{{ loop.index0 }}" value="{{ player|e }}">
-            <input type="number" class="rebuild-start-rating" name="start_rating_{{ loop.index0 }}" min="0" max="3000"
-              value="{{ replay_starts.get(player, default_rating) }}" style="width: 5rem; max-width: 5rem; margin-top: 0;">
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% if match_count > 0 %}
+    <a href="#" id="rebuild-open" class="rankings-action-link">Rebuild rankings</a>
     {% endif %}
-    <label for="rebuild_password">Schedule password</label>
-    <input type="password" id="rebuild_password" name="password" placeholder="Password" style="max-width: 14rem; margin-right: 0.5rem;">
-    <button type="submit" class="btn btn-secondary" style="margin-top: 0.25rem;">Rebuild rankings</button>
-  </form>
+  </p>
   <script type="application/json" id="rebuild-current-ratings">{{ current_rankings|tojson }}</script>
 
   {% if rankings %}
@@ -79,6 +51,47 @@
       <button type="button" id="recent-games-show" class="btn" style="margin-top: 0.25rem;">Show</button>
       <div id="recent-games-results" class="rating-gain-results"></div>
       <button type="button" class="recent-games-close btn btn-secondary" style="margin-top: 1rem;">Close</button>
+    </div>
+  </div>
+
+  <div id="rebuild-modal" class="rating-gain-modal" hidden aria-hidden="true">
+    <div class="rating-gain-backdrop" aria-label="Close"></div>
+    <div class="rating-gain-content rebuild-modal-content">
+      <h3 class="rating-gain-title">Rebuild rankings from history</h3>
+      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Replays all {{ match_count }} stored game(s) in date order. Set each player's rating <em>before</em> those games are applied, then rebuild overwrites the table.</p>
+      <form method="post" action="{{ url_for('rankings_rebuild') }}" id="rebuild-form">
+        {% if rebuild_players %}
+        <p style="margin: 0 0 0.5rem 0;">
+          <button type="button" id="rebuild-fill-current" class="btn btn-secondary" style="margin-right: 0.5rem;">Fill from current table</button>
+          <button type="button" id="rebuild-fill-default" class="btn btn-secondary">Reset all to {{ default_rating }}</button>
+        </p>
+        <div class="rebuild-table-wrap">
+          <table class="rebuild-table">
+            <thead>
+              <tr><th>Player</th><th>Starting rating</th></tr>
+            </thead>
+            <tbody>
+              {% for player in rebuild_players %}
+              <tr>
+                <td>{{ player }}</td>
+                <td>
+                  <input type="hidden" name="start_player_{{ loop.index0 }}" value="{{ player|e }}">
+                  <input type="number" class="rebuild-start-rating" name="start_rating_{{ loop.index0 }}" min="0" max="3000"
+                    value="{{ replay_starts.get(player, default_rating) }}" style="width: 5rem; max-width: 5rem; margin-top: 0;">
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+        <label for="rebuild_password">Schedule password</label>
+        <input type="password" id="rebuild_password" name="password" placeholder="Password" style="max-width: 14rem; margin-bottom: 0.5rem; display: block;">
+        <div class="rebuild-modal-actions">
+          <button type="submit" class="btn btn-secondary">Rebuild rankings</button>
+          <button type="button" class="rebuild-close btn btn-secondary">Cancel</button>
+        </div>
+      </form>
     </div>
   </div>
 {% endblock %}
@@ -140,6 +153,27 @@
     .recent-game-card .delta-pos { color: var(--success); font-weight: 600; }
     .recent-game-card .delta-neg { color: var(--error); font-weight: 600; }
     .recent-game-card .delta-zero { color: var(--muted); font-weight: 600; }
+    .rankings-action-link {
+      margin-left: 1rem;
+      color: var(--accent);
+      font-size: 0.95rem;
+    }
+    .rankings-action-link:hover { text-decoration: underline; }
+    .rebuild-modal-content { max-width: 36rem; }
+    .rebuild-table-wrap {
+      max-height: 40vh;
+      overflow-y: auto;
+      margin-bottom: 0.75rem;
+      border: 1px solid var(--court-line);
+      border-radius: 6px;
+    }
+    .rebuild-table { max-width: 100%; margin: 0; border: none; border-radius: 0; }
+    .rebuild-modal-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.75rem;
+    }
   </style>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
@@ -291,13 +325,32 @@
       if (rgClose) rgClose.addEventListener('click', hideRgModal);
       if (rgModal) rgModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideRgModal(); });
 
+      var rebuildOpen = document.getElementById('rebuild-open');
+      var rebuildModal = document.getElementById('rebuild-modal');
       var rebuildForm = document.getElementById('rebuild-form');
+      var rebuildBackdrop = rebuildModal && rebuildModal.querySelector('.rating-gain-backdrop');
+      var rebuildCloseBtn = rebuildModal && rebuildModal.querySelector('.rebuild-close');
       var fillCurrentBtn = document.getElementById('rebuild-fill-current');
       var fillDefaultBtn = document.getElementById('rebuild-fill-default');
       var currentRatingsEl = document.getElementById('rebuild-current-ratings');
       var defaultRating = {{ default_rating }};
 
+      function showRebuildModal() {
+        if (!rebuildModal) return;
+        rebuildModal.hidden = false;
+        rebuildModal.setAttribute('aria-hidden', 'false');
+        var pw = document.getElementById('rebuild_password');
+        if (pw) pw.focus();
+      }
+
+      function hideRebuildModal() {
+        if (!rebuildModal) return;
+        rebuildModal.hidden = true;
+        rebuildModal.setAttribute('aria-hidden', 'true');
+      }
+
       function setRebuildRatings(valuesByPlayer, fallback) {
+        if (!rebuildForm) return;
         rebuildForm.querySelectorAll('tbody tr').forEach(function(row) {
           var hidden = row.querySelector('input[type="hidden"]');
           var input = row.querySelector('.rebuild-start-rating');
@@ -306,6 +359,16 @@
           input.value = valuesByPlayer[name] != null ? valuesByPlayer[name] : fallback;
         });
       }
+
+      if (rebuildOpen) {
+        rebuildOpen.addEventListener('click', function(e) {
+          e.preventDefault();
+          showRebuildModal();
+        });
+      }
+      if (rebuildBackdrop) rebuildBackdrop.addEventListener('click', hideRebuildModal);
+      if (rebuildCloseBtn) rebuildCloseBtn.addEventListener('click', hideRebuildModal);
+      if (rebuildModal) rebuildModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideRebuildModal(); });
 
       if (fillCurrentBtn && currentRatingsEl) {
         fillCurrentBtn.addEventListener('click', function() {
