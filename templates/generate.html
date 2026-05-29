@@ -104,10 +104,10 @@
       </p>
     </form>
     <p style="margin-top: 1rem;">
-      <form method="post" action="{{ url_for('generate_regenerate') }}" style="display: inline;">
-        <button type="submit" class="btn-secondary">Regenerate</button>
+      <form method="post" action="{{ url_for('generate_regenerate') }}" style="display: inline;" onsubmit="return confirm('Delete this draft and start over?');">
+        <button type="submit" class="btn-secondary">Delete draft</button>
       </form>
-      — Clear draft and change players or options, then generate again.
+      — Clear the draft and generate a new schedule.
     </p>
 
     <div id="schedule-difficulty-modal" class="rating-gain-modal" hidden aria-hidden="true">

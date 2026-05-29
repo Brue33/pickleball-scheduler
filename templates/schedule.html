@@ -38,6 +38,12 @@
       <a href="{{ url_for('schedule_record_results') }}" class="btn">Record results</a>
       — Mark winners and scores, then save to update rankings.
     </p>
+    <form method="post" action="{{ url_for('schedule_delete_published') }}" style="margin-top: 1rem; padding: 0.75rem; background: var(--surface); border: 1px solid var(--court-line); border-radius: 6px; max-width: 28rem;" onsubmit="return confirm('Delete this week\'s published schedule?');">
+      <p style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--muted);">Remove this schedule from the Schedule tab.</p>
+      <label for="delete_published_password">Schedule password</label>
+      <input type="password" id="delete_published_password" name="password" placeholder="Password" style="max-width: 12rem; margin-right: 0.5rem;">
+      <button type="submit" class="btn btn-secondary" style="margin-top: 0.25rem;">Delete schedule</button>
+    </form>
 
     <div id="rating-gain-modal" class="rating-gain-modal" hidden aria-hidden="true">
       <div class="rating-gain-backdrop" aria-label="Close"></div>
@@ -102,6 +108,12 @@
       <a href="{{ url_for('schedule_record_results', schedule='drop_in') }}" class="btn">Record results (drop-in)</a>
       — Mark winners and scores for the drop-in schedule.
     </p>
+    <form method="post" action="{{ url_for('schedule_delete_drop_in') }}" style="margin-top: 1rem; padding: 0.75rem; background: var(--surface); border: 1px solid var(--court-line); border-radius: 6px; max-width: 28rem;" onsubmit="return confirm('Delete the drop-in schedule?');">
+      <p style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--muted);">Remove the drop-in schedule from this page.</p>
+      <label for="delete_drop_in_password">Schedule password</label>
+      <input type="password" id="delete_drop_in_password" name="password" placeholder="Password" style="max-width: 12rem; margin-right: 0.5rem;">
+      <button type="submit" class="btn btn-secondary" style="margin-top: 0.25rem;">Delete drop-in schedule</button>
+    </form>
   {% endif %}
 
   {% if not player_list %}

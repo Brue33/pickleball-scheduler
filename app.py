@@ -567,6 +567,23 @@ def clear_draft_schedule():
         DRAFT_SCHEDULE_FILE.unlink()
 
 
+def clear_published_schedule():
+    """Remove published weekly schedule file."""
+    if PUBLISHED_SCHEDULE_FILE.exists():
+        PUBLISHED_SCHEDULE_FILE.unlink()
+
+
+def clear_drop_in_schedule():
+    """Remove published drop-in schedule file."""
+    if DROP_IN_SCHEDULE_FILE.exists():
+        DROP_IN_SCHEDULE_FILE.unlink()
+
+
+def _require_schedule_password():
+    """Return True if request form password matches schedule password."""
+    return request.form.get("password", "").strip() == SCHEDULE_PASSWORD
+
+
 def _prob_value(e, default=0.5):
     """Return prob from a schedule entry as float; use default if missing/invalid."""
     p = e.get("prob", default)
@@ -979,6 +996,34 @@ def slack_command():
         add_round_court_and_bye=add_round_court_and_bye,
     )
     return jsonify(response)
+
+
+@app.route("/schedule/delete-published", methods=["POST"])
+def schedule_delete_published():
+    """Remove this week's published schedule (schedule password)."""
+    if not _require_schedule_password():
+        flash("Incorrect password.", "error")
+        return redirect(url_for("schedule"))
+    if not load_published_schedule() and not PUBLISHED_SCHEDULE_FILE.exists():
+        flash("No published schedule to delete.", "error")
+        return redirect(url_for("schedule"))
+    clear_published_schedule()
+    flash("Published schedule deleted.", "success")
+    return redirect(url_for("schedule"))
+
+
+@app.route("/schedule/delete-drop-in", methods=["POST"])
+def schedule_delete_drop_in():
+    """Remove the drop-in schedule (schedule password)."""
+    if not _require_schedule_password():
+        flash("Incorrect password.", "error")
+        return redirect(url_for("schedule"))
+    if not load_drop_in_schedule() and not DROP_IN_SCHEDULE_FILE.exists():
+        flash("No drop-in schedule to delete.", "error")
+        return redirect(url_for("schedule"))
+    clear_drop_in_schedule()
+    flash("Drop-in schedule deleted.", "success")
+    return redirect(url_for("schedule"))
 
 
 @app.route("/schedule", methods=["GET"])
