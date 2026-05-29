@@ -42,6 +42,7 @@ PLAYER_BIOS_FILE = _DATA_DIR / "player_bios.json"
 MATCH_HISTORY_FILE = _DATA_DIR / "match_history.json"
 AVAILABILITY_FILE = _DATA_DIR / "availability.json"
 MENS_LEAGUE_STANDINGS_FILE = _DATA_DIR / "mens_league_standings.json"
+REPLAY_STARTING_RATINGS_FILE = _DATA_DIR / "replay_starting_ratings.json"
 PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
@@ -116,14 +117,18 @@ def save_match_history(matches_newest_first):
         json.dump({"matches": stored}, f, indent=2)
 
 
-def save_match_history_and_rebuild_rankings(matches_newest_first):
+def save_match_history_and_rebuild_rankings(matches_newest_first, starting_ratings=None):
     """
     Persist history (newest first), recompute prob_team1 per match from replay order,
     and rebuild rankings.json by replaying all games chronologically (same rules as live updates).
+    starting_ratings: optional {player: int} seeds before the first stored game (else 1300).
     Players who only appear in old rankings and not in any match keep their previous rating.
     """
     chrono = list(reversed(matches_newest_first))
     old_rankings = load_rankings()
+    if starting_ratings is None:
+        saved = load_replay_starting_ratings()
+        starting_ratings = saved if saved else None
     if not chrono:
         save_match_history([])
         save_rankings({p: DEFAULT_RATING for p in old_rankings.keys()} if old_rankings else {})
@@ -133,7 +138,10 @@ def save_match_history_and_rebuild_rankings(matches_newest_first):
         for p in (m.get("team1") or []) + (m.get("team2") or []):
             if p:
                 players.add(p)
-    ratings = {p: DEFAULT_RATING for p in players}
+    if starting_ratings is not None:
+        ratings = {p: int(starting_ratings.get(p, DEFAULT_RATING)) for p in players}
+    else:
+        ratings = {p: DEFAULT_RATING for p in players}
     rebuilt_chrono = []
     for m in chrono:
         t1 = [str(x).strip() for x in (m.get("team1") or [])]
@@ -206,6 +214,69 @@ def get_wins_losses_by_player():
     return {p: {"wins": wins.get(p, 0), "losses": losses.get(p, 0)} for p in set(wins) | set(losses)}
 
 
+def load_replay_starting_ratings():
+    """Starting ratings used when replaying stored games (rebuild / review)."""
+    if not REPLAY_STARTING_RATINGS_FILE.exists():
+        return {}
+    try:
+        with open(REPLAY_STARTING_RATINGS_FILE) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out = {}
+    for name, val in data.items():
+        try:
+            out[str(name)] = int(val)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def save_replay_starting_ratings(ratings_dict):
+    with open(REPLAY_STARTING_RATINGS_FILE, "w") as f:
+        json.dump({k: int(v) for k, v in ratings_dict.items()}, f, indent=2)
+
+
+def replay_seed_rating(ratings, player):
+    """Player rating at start of next replayed match."""
+    if player in ratings:
+        return int(ratings[player])
+    seeds = load_replay_starting_ratings()
+    if player in seeds:
+        return int(seeds[player])
+    return DEFAULT_RATING
+
+
+def all_rebuild_player_names():
+    """Players to show in rebuild starting-ratings form."""
+    names = set(load_rankings().keys())
+    for p in load_players_list():
+        if p:
+            names.add(p)
+    for m in load_match_history():
+        for p in (m.get("team1") or []) + (m.get("team2") or []):
+            if p:
+                names.add(p)
+    return sorted(names, key=lambda x: x.lower())
+
+
+def parse_starting_ratings_from_form(player_names):
+    """Read starting rating inputs from rebuild form."""
+    result = {}
+    for i, name in enumerate(player_names):
+        raw = request.form.get(f"start_rating_{i}", "").strip()
+        if not raw:
+            result[name] = DEFAULT_RATING
+            continue
+        try:
+            result[name] = int(raw)
+        except ValueError:
+            raise ValueError(f"Starting rating for {name} must be a whole number.")
+    return result
+
+
 def resolve_player_display_name(query):
     """Case-insensitive match to a player name from rankings or match history. Returns stored spelling or None."""
     q = (query or "").strip().lower()
@@ -243,7 +314,7 @@ def recent_games_rating_review(player_query, max_games=10):
         s1 = m.get("score_team1")
         s2 = m.get("score_team2")
         in_match = name in team1 or name in team2
-        before = int(ratings.get(name, DEFAULT_RATING)) if in_match else None
+        before = int(replay_seed_rating(ratings, name)) if in_match else None
         apply_match_to_ratings_in_place(ratings, team1, team2, winner, s1, s2)
         if in_match:
             after = int(ratings[name])
@@ -1548,18 +1619,25 @@ def rankings():
     bios = load_player_bios()
     wins_losses = get_wins_losses_by_player()
     match_count = len(load_match_history())
+    rebuild_players = all_rebuild_player_names()
+    replay_starts = load_replay_starting_ratings()
+    current_rankings = load_rankings()
     return render_template(
         "rankings.html",
         rankings=sorted_rankings,
         bios=bios,
         wins_losses=wins_losses,
         match_count=match_count,
+        rebuild_players=rebuild_players,
+        replay_starts=replay_starts,
+        current_rankings=current_rankings,
+        default_rating=DEFAULT_RATING,
     )
 
 
 @app.route("/rankings/rebuild", methods=["POST"])
 def rankings_rebuild():
-    """Replay all stored games from 1300 and rebuild rankings.json (schedule password)."""
+    """Replay stored games from configured starting ratings and rebuild rankings.json."""
     if request.form.get("password", "").strip() != SCHEDULE_PASSWORD:
         flash("Incorrect password.", "error")
         return redirect(url_for("rankings"))
@@ -1568,13 +1646,16 @@ def rankings_rebuild():
         flash("No past games in history to rebuild from.", "error")
         return redirect(url_for("rankings"))
     try:
-        save_match_history_and_rebuild_rankings(matches)
+        player_names = all_rebuild_player_names()
+        starting = parse_starting_ratings_from_form(player_names)
+        save_replay_starting_ratings(starting)
+        save_match_history_and_rebuild_rankings(matches, starting_ratings=starting)
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("rankings"))
     after = load_rankings()
     flash(
-        f"Rankings rebuilt from {len(matches)} stored game(s) (each player replayed from 1300). "
+        f"Rankings rebuilt from {len(matches)} stored game(s) using your starting ratings. "
         f"{len(after)} player(s) updated.",
         "success",
     )

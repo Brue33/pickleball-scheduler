@@ -6,13 +6,37 @@
     <button type="button" id="recent-games-btn" class="btn btn-secondary">Review recent games</button>
   </p>
 
-  <form method="post" action="{{ url_for('rankings_rebuild') }}" style="margin-bottom: 1.5rem; padding: 1rem; background: var(--surface); border: 1px solid var(--court-line); border-radius: 6px; max-width: 28rem;" onsubmit="return confirm('Rebuild all rankings by replaying every stored game from 1300?');">
+  <form method="post" action="{{ url_for('rankings_rebuild') }}" id="rebuild-form" style="margin-bottom: 1.5rem; padding: 1rem; background: var(--surface); border: 1px solid var(--court-line); border-radius: 6px; max-width: 36rem;">
     <p style="margin: 0 0 0.5rem 0; font-weight: 600;">Rebuild rankings from history</p>
-    <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Replays all {{ match_count }} stored game(s) in date order and overwrites the ratings table. Use this if Review recent games does not match your rating. Each player starts at 1300 for the replay.</p>
+    <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Replays all {{ match_count }} stored game(s) in date order. Set each player's rating <em>before</em> those games are applied, then rebuild overwrites the table.</p>
+    {% if rebuild_players %}
+    <p style="margin: 0 0 0.5rem 0;">
+      <button type="button" id="rebuild-fill-current" class="btn btn-secondary" style="margin-right: 0.5rem;">Fill from current table</button>
+      <button type="button" id="rebuild-fill-default" class="btn btn-secondary">Reset all to {{ default_rating }}</button>
+    </p>
+    <table style="max-width: 100%; margin-bottom: 0.75rem;">
+      <thead>
+        <tr><th>Player</th><th>Starting rating</th></tr>
+      </thead>
+      <tbody>
+        {% for player in rebuild_players %}
+        <tr>
+          <td>{{ player }}</td>
+          <td>
+            <input type="hidden" name="start_player_{{ loop.index0 }}" value="{{ player|e }}">
+            <input type="number" class="rebuild-start-rating" name="start_rating_{{ loop.index0 }}" min="0" max="3000"
+              value="{{ replay_starts.get(player, default_rating) }}" style="width: 5rem; max-width: 5rem; margin-top: 0;">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
     <label for="rebuild_password">Schedule password</label>
     <input type="password" id="rebuild_password" name="password" placeholder="Password" style="max-width: 14rem; margin-right: 0.5rem;">
     <button type="submit" class="btn btn-secondary" style="margin-top: 0.25rem;">Rebuild rankings</button>
   </form>
+  <script type="application/json" id="rebuild-current-ratings">{{ current_rankings|tojson }}</script>
 
   {% if rankings %}
     <table>
@@ -49,7 +73,7 @@
     <div class="rating-gain-backdrop" aria-label="Close"></div>
     <div class="rating-gain-content">
       <h3 class="rating-gain-title">Review recent games</h3>
-      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Last 10 games from history. Rating changes use stored scores and the same rules as live updates. After a rebuild, these should match the table above.</p>
+      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Last 10 games from history. Rating changes use stored scores and the same rules as live updates. Uses the same starting ratings as rebuild (saved when you rebuild).</p>
       <label for="recent-games-name">Your name</label>
       <input type="text" id="recent-games-name" placeholder="e.g. Bryan R" style="max-width: 16rem; margin-bottom: 0.5rem; display: block;">
       <button type="button" id="recent-games-show" class="btn" style="margin-top: 0.25rem;">Show</button>
@@ -266,6 +290,43 @@
       if (rgBackdrop) rgBackdrop.addEventListener('click', hideRgModal);
       if (rgClose) rgClose.addEventListener('click', hideRgModal);
       if (rgModal) rgModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideRgModal(); });
+
+      var rebuildForm = document.getElementById('rebuild-form');
+      var fillCurrentBtn = document.getElementById('rebuild-fill-current');
+      var fillDefaultBtn = document.getElementById('rebuild-fill-default');
+      var currentRatingsEl = document.getElementById('rebuild-current-ratings');
+      var defaultRating = {{ default_rating }};
+
+      function setRebuildRatings(valuesByPlayer, fallback) {
+        rebuildForm.querySelectorAll('tbody tr').forEach(function(row) {
+          var hidden = row.querySelector('input[type="hidden"]');
+          var input = row.querySelector('.rebuild-start-rating');
+          if (!hidden || !input) return;
+          var name = hidden.value;
+          input.value = valuesByPlayer[name] != null ? valuesByPlayer[name] : fallback;
+        });
+      }
+
+      if (fillCurrentBtn && currentRatingsEl) {
+        fillCurrentBtn.addEventListener('click', function() {
+          try {
+            var ratings = JSON.parse(currentRatingsEl.textContent || '{}');
+            setRebuildRatings(ratings, defaultRating);
+          } catch (e) { /* ignore */ }
+        });
+      }
+      if (fillDefaultBtn) {
+        fillDefaultBtn.addEventListener('click', function() {
+          setRebuildRatings({}, defaultRating);
+        });
+      }
+      if (rebuildForm) {
+        rebuildForm.addEventListener('submit', function(e) {
+          if (!confirm('Rebuild all rankings using the starting ratings above?')) {
+            e.preventDefault();
+          }
+        });
+      }
     });
   </script>
 {% endblock %}
