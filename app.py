@@ -1663,17 +1663,21 @@ def export_mens_league_standings():
 def min_score_rating_gain(schedule_prob_team1, for_team=1):
     """
     Minimum **win** (you score 11 vs opponent t, win by 2 rules) so your side **gains** rating,
-    using the same friendly-rule share clamps as real updates (hold opponent to 5+ to avoid
-    free pass when under expected; etc.).
+    using the same friendly-rule share clamps as real updates.
 
-    schedule_prob_team1: expected score share for team 1 from the schedule (same as win % basis).
+    Friendly rule: if you win and hold the opponent to 5 or fewer, you won't lose rating (share
+    is clamped up to expected). We prefer scores where the opponent scores at least 6 when
+    those still gain, matching the league's friendly play intent.
+
+    schedule_prob_team1: Team 1 win probability from the schedule (same basis as the % shown).
     for_team: 1 = advice for team 1, 2 = advice for team 2.
     """
     if schedule_prob_team1 is None:
         e1 = 0.5
     else:
         try:
-            e1 = float(schedule_prob_team1)
+            # Match the integer win % shown on the schedule tab, e.g. 65% -> 0.65
+            e1 = int(float(schedule_prob_team1) * 100) / 100.0
         except (TypeError, ValueError):
             e1 = 0.5
     e2 = 1.0 - e1
@@ -1684,7 +1688,7 @@ def min_score_rating_gain(schedule_prob_team1, for_team=1):
         e_own = e2
 
     if e_own >= 1.0:
-        return "11-0 or better"
+        return "11-6 or better"
     if e_own <= 0:
         return "11-9 or better"
 
@@ -1702,24 +1706,25 @@ def min_score_rating_gain(schedule_prob_team1, for_team=1):
         s1, s2 = adjust_shares_for_friendly_rules(2, opponent_pts, my_pts, s1_raw, s2_raw, e1, e2)
         return s2 > e2
 
-    if for_team == 1:
-        for t_opp in range(9, -1, -1):
-            if team1_wins_gain(t_opp):
+    def find_min_win(wins_gain):
+        """Easiest 11-x win that gains rating; prefer opponent scoring 6+ (friendly rule)."""
+        for t_opp in range(9, 5, -1):
+            if wins_gain(t_opp):
                 return f"11-{t_opp} or better"
-        if team1_wins_gain(10, 12):
+        for t_opp in range(5, -1, -1):
+            if wins_gain(t_opp):
+                if t_opp <= 5 and wins_gain(6):
+                    return "11-6 or better"
+                return f"11-{t_opp} or better"
+        if wins_gain(10, 12):
             return "12-10 or better"
-        if team1_wins_gain(11, 13):
+        if wins_gain(11, 13):
             return "13-11 or better"
         return "13-11 or better"
 
-    for t_opp in range(9, -1, -1):
-        if team2_wins_gain(t_opp):
-            return f"11-{t_opp} or better"
-    if team2_wins_gain(10, 12):
-        return "12-10 or better"
-    if team2_wins_gain(11, 13):
-        return "13-11 or better"
-    return "13-11 or better"
+    if for_team == 1:
+        return find_min_win(team1_wins_gain)
+    return find_min_win(team2_wins_gain)
 
 
 @app.template_filter("date_long_month_short_year")
