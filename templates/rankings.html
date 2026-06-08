@@ -69,9 +69,9 @@
 
   <div id="personal-review-modal" class="rating-gain-modal" hidden aria-hidden="true">
     <div class="rating-gain-backdrop" aria-label="Close"></div>
-    <div class="rating-gain-content">
+    <div class="rating-gain-content personal-review-modal-content">
       <h3 class="rating-gain-title">Personal review</h3>
-      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">ELO rank and rating, avg points per game, and last 10 games with rating changes.</p>
+      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">ELO rank and rating, avg points per game, and all games by week with rating changes.</p>
       <label for="personal-review-name">Your name</label>
       <input type="text" id="personal-review-name" placeholder="e.g. Bryan R" style="max-width: 16rem; margin-bottom: 0.5rem; display: block;">
       <button type="button" id="personal-review-show" class="btn" style="margin-top: 0.25rem;">Show</button>
@@ -252,6 +252,8 @@
     }
     .personal-stat { color: var(--muted); }
     .personal-stat strong { color: var(--text); }
+    .personal-review-modal-content { max-width: 40rem; max-height: 85vh; overflow-y: auto; }
+    .personal-games-wrap { margin-top: 0.75rem; }
   </style>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
@@ -427,12 +429,103 @@
       var prBackdrop = prModal && prModal.querySelector('.rating-gain-backdrop');
       var prClose = prModal && prModal.querySelector('.personal-review-close');
       var prUrl = {{ url_for('rankings_personal_review')|tojson }};
+      var prWeeks = [];
+      var prWeekIndex = 0;
+      var prSummaryHtml = '';
+
+      function prWeekSelectLabel(w) {
+        var label = w.week_number != null
+          ? 'Week ' + w.week_number + ' — ' + (w.week_label || w.week_end || '')
+          : (w.week_label || 'Unknown date');
+        if (w.game_count != null) {
+          label += ' (' + w.game_count + ' games)';
+        }
+        return label;
+      }
+
+      function renderPersonalGameCards(matches) {
+        var parts = [];
+        (matches || []).forEach(function(m) {
+          var t1 = (m.team1 || []).join(' & ');
+          var t2 = (m.team2 || []).join(' & ');
+          var d = m.delta;
+          var dc = deltaClass(d);
+          var deltaStr = (d > 0 ? '+' : '') + d;
+          parts.push(
+            '<div class="recent-game-card">' +
+              '<div class="meta">' + escapeHtml(formatDate(m.date)) + '</div>' +
+              '<div><strong>' + escapeHtml(t1) + '</strong> vs <strong>' + escapeHtml(t2) + '</strong></div>' +
+              '<div style="margin-top: 0.25rem;">' + escapeHtml(scoreLine(m)) + ' · ' + escapeHtml(winnerLine(m)) + '</div>' +
+              '<div style="margin-top: 0.4rem;">ELO: ' + m.rating_before + ' → ' + m.rating_after +
+              ' <span class="' + dc + '">(' + deltaStr + ')</span></div>' +
+            '</div>'
+          );
+        });
+        return parts.join('');
+      }
+
+      function renderPersonalReviewWeek() {
+        if (!prResults || !prWeeks.length) return;
+        var w = prWeeks[prWeekIndex];
+        var parts = [prSummaryHtml];
+        parts.push('<div class="personal-games-wrap">');
+        if (prWeeks.length > 1) {
+          parts.push('<div class="week-nav"><div class="week-nav-row">');
+          parts.push('<button type="button" id="pr-week-newer" class="btn btn-secondary week-nav-btn"' + (prWeekIndex <= 0 ? ' disabled' : '') + '>← Newer</button>');
+          parts.push('<select id="pr-week-select" class="week-nav-select">');
+          prWeeks.forEach(function(week, i) {
+            parts.push('<option value="' + i + '"' + (i === prWeekIndex ? ' selected' : '') + '>' + escapeHtml(prWeekSelectLabel(week)) + '</option>');
+          });
+          parts.push('</select>');
+          parts.push('<button type="button" id="pr-week-older" class="btn btn-secondary week-nav-btn"' + (prWeekIndex >= prWeeks.length - 1 ? ' disabled' : '') + '>Older →</button>');
+          parts.push('</div></div>');
+        }
+        var weekTitle = w.week_number != null
+          ? 'Week ' + w.week_number + ' — ending ' + escapeHtml(w.week_label || w.week_end || '')
+          : escapeHtml(w.week_label || 'Unknown date');
+        parts.push('<p style="margin: 0.75rem 0 0.35rem 0;"><strong>' + weekTitle + '</strong></p>');
+        var meta = [];
+        meta.push(w.game_count + ' game(s)');
+        if (w.scored_games) {
+          meta.push('avg pts ' + w.avg_points);
+        }
+        if (w.week_delta_sum != null) {
+          meta.push('ELO net ' + (w.week_delta_sum > 0 ? '+' : '') + w.week_delta_sum);
+        }
+        parts.push('<p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.5rem 0;">' + meta.join(' · ') + '</p>');
+        parts.push(renderPersonalGameCards(w.matches));
+        parts.push('</div>');
+        prResults.innerHTML = parts.join('');
+
+        var newerBtn = document.getElementById('pr-week-newer');
+        var olderBtn = document.getElementById('pr-week-older');
+        var selectEl = document.getElementById('pr-week-select');
+        if (newerBtn) newerBtn.addEventListener('click', function() {
+          if (prWeekIndex > 0) {
+            prWeekIndex -= 1;
+            renderPersonalReviewWeek();
+          }
+        });
+        if (olderBtn) olderBtn.addEventListener('click', function() {
+          if (prWeekIndex < prWeeks.length - 1) {
+            prWeekIndex += 1;
+            renderPersonalReviewWeek();
+          }
+        });
+        if (selectEl) selectEl.addEventListener('change', function() {
+          prWeekIndex = parseInt(selectEl.value, 10) || 0;
+          renderPersonalReviewWeek();
+        });
+      }
 
       function showPrModal() {
         if (!prModal) return;
         prModal.hidden = false;
         prModal.setAttribute('aria-hidden', 'false');
         prResults.innerHTML = '';
+        prWeeks = [];
+        prWeekIndex = 0;
+        prSummaryHtml = '';
         prName.value = '';
         prName.focus();
       }
@@ -460,8 +553,8 @@
             }
             var b = res.body;
             var player = b.player || name;
-            var matches = b.matches || [];
-            if (matches.length === 0 && !b.scored_games) {
+            prWeeks = b.weeks || [];
+            if (prWeeks.length === 0 && !b.scored_games && !b.total_games) {
               prResults.innerHTML = '<p style="color: var(--muted);">No games in history for <strong>' + escapeHtml(player) + '</strong>.</p>';
               return;
             }
@@ -481,31 +574,13 @@
             if (b.replayed_rating != null && b.current_rating != null && b.replayed_rating !== b.current_rating) {
               parts.push('<p style="color: var(--error); font-size: 0.85rem;">ELO replay (' + b.replayed_rating + ') does not match live table (' + b.current_rating + '). Rebuild with correct starting ratings, or remove stray games on Past games.</p>');
             }
-            if (matches.length === 0) {
-              parts.push('<p style="color: var(--muted);">No ELO game history to show.</p>');
-            } else {
-              if (b.total_games > matches.length) {
-                parts.push('<p style="color: var(--muted); font-size: 0.85rem;">Showing last ' + matches.length + ' of ' + b.total_games + ' game(s) with ELO changes.</p>');
-              }
-              parts.push('<p style="margin-top: 0.5rem;">Recent games, newest first:</p>');
-              matches.forEach(function(m) {
-                var t1 = (m.team1 || []).join(' & ');
-                var t2 = (m.team2 || []).join(' & ');
-                var d = m.delta;
-                var dc = deltaClass(d);
-                var deltaStr = (d > 0 ? '+' : '') + d;
-                parts.push(
-                  '<div class="recent-game-card">' +
-                    '<div class="meta">' + escapeHtml(formatDate(m.date)) + '</div>' +
-                    '<div><strong>' + escapeHtml(t1) + '</strong> vs <strong>' + escapeHtml(t2) + '</strong></div>' +
-                    '<div style="margin-top: 0.25rem;">' + escapeHtml(scoreLine(m)) + ' · ' + escapeHtml(winnerLine(m)) + '</div>' +
-                    '<div style="margin-top: 0.4rem;">ELO: ' + m.rating_before + ' → ' + m.rating_after +
-                    ' <span class="' + dc + '">(' + deltaStr + ')</span></div>' +
-                  '</div>'
-                );
-              });
+            prSummaryHtml = parts.join('');
+            prWeekIndex = 0;
+            if (prWeeks.length === 0) {
+              prResults.innerHTML = prSummaryHtml + '<p style="color: var(--muted); margin-top: 0.75rem;">No ELO game history to show.</p>';
+              return;
             }
-            prResults.innerHTML = parts.join('');
+            renderPersonalReviewWeek();
           })
           .catch(function() {
             prResults.innerHTML = '<p style="color: var(--error);">Could not load. Try again.</p>';

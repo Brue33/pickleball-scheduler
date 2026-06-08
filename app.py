@@ -351,6 +351,17 @@ def elo_rank_for_player(name):
     return None, int(load_rankings().get(name, DEFAULT_RATING))
 
 
+def game_week_number_map():
+    """Map week_end ISO -> week_number (1 = oldest) from all dated matches."""
+    week_keys = set()
+    for m in load_match_history():
+        wk = game_week_key(m)
+        if wk:
+            week_keys.add(wk)
+    sorted_keys = sorted(week_keys)
+    return {wk: i + 1 for i, wk in enumerate(sorted_keys)}, len(sorted_keys)
+
+
 def load_replay_starting_ratings():
     """Starting ratings used when replaying stored games (rebuild / review)."""
     if not REPLAY_STARTING_RATINGS_FILE.exists():
@@ -446,10 +457,10 @@ def resolve_player_display_name(query):
     return None
 
 
-def recent_games_rating_review(player_query, max_games=10):
+def recent_games_rating_review(player_query):
     """
-    Replay all matches in chronological order and return the last max_games involving the player,
-    with rating before/after each (same replay rules as rebuild rankings).
+    Replay all matches in chronological order and return every game involving the player,
+    grouped by game week with rating before/after each (same replay rules as rebuild).
     """
     name = resolve_player_display_name(player_query)
     if not name:
@@ -458,6 +469,7 @@ def recent_games_rating_review(player_query, max_games=10):
     ratings = initialize_replay_ratings()
     starting_rating = int(ratings.get(name, DEFAULT_RATING))
     matches_chrono = list(reversed(load_match_history()))
+    week_num_map, week_total = game_week_number_map()
     rows = []
     for m in matches_chrono:
         team1 = m.get("team1") or []
@@ -472,32 +484,85 @@ def recent_games_rating_review(player_query, max_games=10):
         apply_match_to_ratings_in_place(ratings, team1, team2, winner, s1, s2)
         if in_match:
             after = int(ratings[name])
-            rows.append(
-                {
-                    "date": m.get("date"),
-                    "team1": list(team1),
-                    "team2": list(team2),
-                    "winner": winner,
-                    "score_team1": s1,
-                    "score_team2": s2,
-                    "rating_before": before,
-                    "rating_after": after,
-                    "delta": after - before,
-                }
-            )
+            wk = game_week_key(m)
+            row = {
+                "date": m.get("date"),
+                "team1": list(team1),
+                "team2": list(team2),
+                "winner": winner,
+                "score_team1": s1,
+                "score_team2": s2,
+                "rating_before": before,
+                "rating_after": after,
+                "delta": after - before,
+                "week_end": wk,
+            }
+            if wk:
+                row["week_label"] = format_game_day_display(date.fromisoformat(wk))
+                row["week_number"] = week_num_map.get(wk)
+            rows.append(row)
     replayed_rating = int(ratings.get(name, starting_rating))
-    last_n = rows[-max_games:]
-    last_n = list(reversed(last_n))
     scored_matches = [m for m in load_match_history() if match_has_scores(m)]
     pts = compute_points_stats(scored_matches).get(name, {})
     elo_rank, elo_rating = elo_rank_for_player(name)
+
+    by_week = {}
+    for row in rows:
+        wk = row.get("week_end") or "unknown"
+        by_week.setdefault(wk, []).append(row)
+
+    weeks = []
+    known_weeks = [wk for wk in by_week.keys() if wk != "unknown"]
+    for wk in sorted(known_weeks, reverse=True):
+        week_rows = list(reversed(by_week[wk]))
+        end_date = date.fromisoformat(wk)
+        week_scored = [r for r in week_rows if match_has_scores(r)]
+        week_pts = compute_points_stats(
+            [
+                {
+                    "team1": r["team1"],
+                    "team2": r["team2"],
+                    "winner": r["winner"],
+                    "score_team1": r["score_team1"],
+                    "score_team2": r["score_team2"],
+                }
+                for r in week_scored
+            ]
+        ).get(name, {})
+        weeks.append(
+            {
+                "week_end": wk,
+                "week_label": format_game_day_display(end_date),
+                "week_number": week_num_map.get(wk),
+                "week_total": week_total,
+                "game_count": len(week_rows),
+                "week_delta_sum": sum(r["delta"] for r in week_rows),
+                "avg_points": week_pts.get("avg", 0),
+                "scored_games": week_pts.get("games", 0),
+                "matches": week_rows,
+            }
+        )
+    if "unknown" in by_week:
+        weeks.append(
+            {
+                "week_end": None,
+                "week_label": "Unknown date",
+                "week_number": None,
+                "week_total": week_total,
+                "game_count": len(by_week["unknown"]),
+                "week_delta_sum": sum(r["delta"] for r in by_week["unknown"]),
+                "avg_points": 0,
+                "scored_games": 0,
+                "matches": list(reversed(by_week["unknown"])),
+            }
+        )
+
     return name, {
-        "matches": last_n,
+        "weeks": weeks,
         "current_rating": current_rating,
         "replayed_rating": replayed_rating,
         "starting_rating": starting_rating,
         "total_games": len(rows),
-        "last_n_delta_sum": sum(m["delta"] for m in last_n),
         "full_delta_sum": replayed_rating - starting_rating,
         "elo_rank": elo_rank,
         "elo_rating": elo_rating,
@@ -1897,7 +1962,7 @@ def rankings_personal_review():
     q = request.args.get("name", "").strip()
     if not q:
         return jsonify({"error": "missing_name", "message": "Enter a name."}), 400
-    resolved, payload = recent_games_rating_review(q, max_games=10)
+    resolved, payload = recent_games_rating_review(q)
     if resolved is None:
         return jsonify(payload), 404
     return jsonify({"player": resolved, **payload})
