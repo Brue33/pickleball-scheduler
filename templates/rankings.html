@@ -54,6 +54,14 @@
     <div class="rating-gain-content recent-weeks-modal-content">
       <h3 class="rating-gain-title">Recent weeks</h3>
       <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Each game week runs Friday through Thursday (Eastern). Weeks are labeled by ending Thursday.</p>
+      <div id="recent-weeks-nav" class="week-nav" hidden>
+        <div class="week-nav-row">
+          <button type="button" id="recent-weeks-newer" class="btn btn-secondary week-nav-btn" disabled aria-label="Newer week">← Newer</button>
+          <label for="recent-weeks-select" class="visually-hidden">Choose week</label>
+          <select id="recent-weeks-select" class="week-nav-select"></select>
+          <button type="button" id="recent-weeks-older" class="btn btn-secondary week-nav-btn" aria-label="Older week">Older →</button>
+        </div>
+      </div>
       <div id="recent-weeks-results" class="rating-gain-results"></div>
       <button type="button" class="recent-weeks-close btn btn-secondary" style="margin-top: 1rem;">Close</button>
     </div>
@@ -182,6 +190,37 @@
     .week-block .week-meta { color: var(--muted); font-size: 0.8rem; margin-bottom: 0.5rem; }
     .week-table { width: 100%; margin: 0; font-size: 0.9rem; }
     .week-table th, .week-table td { padding: 0.25rem 0.4rem; text-align: left; }
+    .week-nav { margin-bottom: 0.85rem; }
+    .week-nav-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .week-nav-btn { flex: 0 0 auto; padding: 0.35rem 0.65rem; font-size: 0.85rem; }
+    .week-nav-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .week-nav-select {
+      flex: 1 1 12rem;
+      min-width: 10rem;
+      max-width: 100%;
+      padding: 0.4rem 0.5rem;
+      font-size: 0.9rem;
+      background: var(--court);
+      color: var(--text);
+      border: 1px solid var(--court-line);
+      border-radius: 6px;
+    }
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
     .rankings-action-link {
       margin-left: 1rem;
       color: var(--accent);
@@ -285,36 +324,79 @@
 
       var rwBtn = document.getElementById('recent-weeks-btn');
       var rwModal = document.getElementById('recent-weeks-modal');
+      var rwNav = document.getElementById('recent-weeks-nav');
+      var rwSelect = document.getElementById('recent-weeks-select');
+      var rwNewerBtn = document.getElementById('recent-weeks-newer');
+      var rwOlderBtn = document.getElementById('recent-weeks-older');
       var rwResults = document.getElementById('recent-weeks-results');
       var rwBackdrop = rwModal && rwModal.querySelector('.rating-gain-backdrop');
       var rwClose = rwModal && rwModal.querySelector('.recent-weeks-close');
       var rwUrl = {{ url_for('rankings_recent_weeks')|tojson }};
+      var rwWeeks = [];
+      var rwIndex = 0;
+
+      function renderWeekTable(w) {
+        var parts = [];
+        parts.push('<div class="week-block">');
+        parts.push('<h4>Week ' + w.week_number + ' — ending ' + escapeHtml(w.week_label || w.week_end) + '</h4>');
+        parts.push('<div class="week-meta">' + w.game_count + ' scored game(s)</div>');
+        parts.push('<table class="week-table"><thead><tr><th>#</th><th>Player</th><th>Avg</th><th>G</th><th>W–L</th></tr></thead><tbody>');
+        (w.rankings || []).forEach(function(row, i) {
+          parts.push('<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(row.player) + '</td><td>' + row.avg + '</td><td>' + row.games + '</td><td>' + row.wins + '–' + row.losses + '</td></tr>');
+        });
+        parts.push('</tbody></table></div>');
+        return parts.join('');
+      }
+
+      function weekSelectLabel(w) {
+        var label = 'Week ' + w.week_number + ' — ' + (w.week_label || w.week_end);
+        if (w.game_count != null) {
+          label += ' (' + w.game_count + ' games)';
+        }
+        return label;
+      }
+
+      function syncWeekNav() {
+        if (!rwNav || rwWeeks.length === 0) return;
+        rwNav.hidden = rwWeeks.length <= 1;
+        if (rwSelect) {
+          rwSelect.innerHTML = '';
+          rwWeeks.forEach(function(w, i) {
+            var opt = document.createElement('option');
+            opt.value = String(i);
+            opt.textContent = weekSelectLabel(w);
+            rwSelect.appendChild(opt);
+          });
+          rwSelect.value = String(rwIndex);
+        }
+        if (rwNewerBtn) rwNewerBtn.disabled = rwIndex <= 0;
+        if (rwOlderBtn) rwOlderBtn.disabled = rwIndex >= rwWeeks.length - 1;
+      }
+
+      function showWeekAt(index) {
+        if (!rwWeeks.length) return;
+        rwIndex = Math.max(0, Math.min(index, rwWeeks.length - 1));
+        rwResults.innerHTML = renderWeekTable(rwWeeks[rwIndex]);
+        syncWeekNav();
+      }
 
       function showRwModal() {
         if (!rwModal) return;
         rwModal.hidden = false;
         rwModal.setAttribute('aria-hidden', 'false');
+        rwWeeks = [];
+        rwIndex = 0;
+        if (rwNav) rwNav.hidden = true;
         rwResults.innerHTML = '<p style="color: var(--muted);">Loading…</p>';
         fetch(rwUrl)
           .then(function(r) { return r.json(); })
           .then(function(data) {
-            var weeks = data.weeks || [];
-            if (weeks.length === 0) {
+            rwWeeks = data.weeks || [];
+            if (rwWeeks.length === 0) {
               rwResults.innerHTML = '<p style="color: var(--muted);">No scored games in history yet.</p>';
               return;
             }
-            var parts = [];
-            weeks.forEach(function(w) {
-              parts.push('<div class="week-block">');
-              parts.push('<h4>Week ending ' + escapeHtml(w.week_label || w.week_end) + '</h4>');
-              parts.push('<div class="week-meta">' + w.game_count + ' scored game(s)</div>');
-              parts.push('<table class="week-table"><thead><tr><th>#</th><th>Player</th><th>Avg</th><th>G</th><th>W–L</th></tr></thead><tbody>');
-              (w.rankings || []).forEach(function(row, i) {
-                parts.push('<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(row.player) + '</td><td>' + row.avg + '</td><td>' + row.games + '</td><td>' + row.wins + '–' + row.losses + '</td></tr>');
-              });
-              parts.push('</tbody></table></div>');
-            });
-            rwResults.innerHTML = parts.join('');
+            showWeekAt(0);
           })
           .catch(function() {
             rwResults.innerHTML = '<p style="color: var(--error);">Could not load. Try again.</p>';
@@ -328,6 +410,11 @@
       }
 
       if (rwBtn) rwBtn.addEventListener('click', showRwModal);
+      if (rwNewerBtn) rwNewerBtn.addEventListener('click', function() { showWeekAt(rwIndex - 1); });
+      if (rwOlderBtn) rwOlderBtn.addEventListener('click', function() { showWeekAt(rwIndex + 1); });
+      if (rwSelect) rwSelect.addEventListener('change', function() {
+        showWeekAt(parseInt(rwSelect.value, 10) || 0);
+      });
       if (rwBackdrop) rwBackdrop.addEventListener('click', hideRwModal);
       if (rwClose) rwClose.addEventListener('click', hideRwModal);
       if (rwModal) rwModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideRwModal(); });

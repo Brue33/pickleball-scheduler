@@ -312,6 +312,9 @@ def compute_weekly_points_rankings(matches):
             continue
         by_week.setdefault(wk, []).append(m)
     weeks = []
+    sorted_keys = sorted(by_week.keys())
+    week_num_by_key = {wk: i + 1 for i, wk in enumerate(sorted_keys)}
+    week_total = len(sorted_keys)
     for wk in sorted(by_week.keys(), reverse=True):
         stats = compute_points_stats(by_week[wk])
         board = sort_points_leaderboard(stats)
@@ -320,6 +323,8 @@ def compute_weekly_points_rankings(matches):
             {
                 "week_end": wk,
                 "week_label": format_game_day_display(end_date),
+                "week_number": week_num_by_key[wk],
+                "week_total": week_total,
                 "game_count": len(by_week[wk]),
                 "rankings": [
                     {
