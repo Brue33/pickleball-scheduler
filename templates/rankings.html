@@ -2,32 +2,40 @@
 {% block title %}Rankings{% endblock %}
 {% block content %}
   <h1>Rankings</h1>
+  <p style="margin-bottom: 0.35rem; color: var(--muted); font-size: 0.9rem;">
+    All history · avg points per game (scored games only) · ties broken by wins
+  </p>
   <p style="margin-bottom: 1rem;">
-    <button type="button" id="recent-games-btn" class="btn btn-secondary">Review recent games</button>
+    <button type="button" id="recent-weeks-btn" class="btn btn-secondary">Review recent weeks</button>
+    <button type="button" id="personal-review-btn" class="btn btn-secondary" style="margin-left: 0.5rem;">Personal review</button>
     {% if match_count > 0 %}
-    <a href="#" id="rebuild-open" class="rankings-action-link">Rebuild rankings</a>
+    <a href="#" id="rebuild-open" class="rankings-action-link">Rebuild ELO</a>
     {% endif %}
   </p>
   <script type="application/json" id="rebuild-current-ratings">{{ current_rankings|tojson }}</script>
 
-  {% if rankings %}
+  {% if points_leaderboard %}
     <table>
       <thead>
-        <tr><th>Player</th><th>Rating</th><th>W–L</th></tr>
+        <tr><th>#</th><th>Player</th><th>Avg pts</th><th>Games</th><th>W–L</th></tr>
       </thead>
       <tbody>
-        {% for player, rating in rankings %}
-          {% set wl = wins_losses.get(player, {'wins': 0, 'losses': 0}) %}
+        {% for player, st in points_leaderboard %}
           <tr>
+            <td>{{ loop.index }}</td>
             <td>
               <button type="button" class="player-name-btn" data-player="{{ player|e }}" data-bio="{{ (bios.get(player, '') or '')|e|replace('\n', '&#10;') }}">{{ player }}</button>
             </td>
-            <td>{{ rating }}</td>
-            <td>{{ wl.wins }}–{{ wl.losses }}</td>
+            <td>{{ st.avg }}</td>
+            <td>{{ st.games }}</td>
+            <td>{{ st.wins }}–{{ st.losses }}</td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
+    <p style="color: var(--muted); font-size: 0.85rem; margin-top: 0.75rem;">
+      Based on {{ scored_match_count }} scored game(s). Games without scores are excluded (0 counts).
+    </p>
 
     <div id="bio-modal" class="bio-modal" hidden aria-hidden="true">
       <div class="bio-modal-backdrop" aria-label="Close"></div>
@@ -38,37 +46,47 @@
       </div>
     </div>
   {% else %}
-    <p>No rankings yet. <a href="{{ url_for('schedule') }}">Generate a schedule</a> and <a href="{{ url_for('results') }}">record some results</a> to get started.</p>
+    <p>No scored games yet. <a href="{{ url_for('schedule') }}">Generate a schedule</a> and <a href="{{ url_for('results') }}">record results with scores</a> to get started.</p>
   {% endif %}
 
-  <div id="recent-games-modal" class="rating-gain-modal" hidden aria-hidden="true">
+  <div id="recent-weeks-modal" class="rating-gain-modal" hidden aria-hidden="true">
+    <div class="rating-gain-backdrop" aria-label="Close"></div>
+    <div class="rating-gain-content recent-weeks-modal-content">
+      <h3 class="rating-gain-title">Recent weeks</h3>
+      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Each game week runs Friday through Thursday (Eastern). Weeks are labeled by ending Thursday.</p>
+      <div id="recent-weeks-results" class="rating-gain-results"></div>
+      <button type="button" class="recent-weeks-close btn btn-secondary" style="margin-top: 1rem;">Close</button>
+    </div>
+  </div>
+
+  <div id="personal-review-modal" class="rating-gain-modal" hidden aria-hidden="true">
     <div class="rating-gain-backdrop" aria-label="Close"></div>
     <div class="rating-gain-content">
-      <h3 class="rating-gain-title">Review recent games</h3>
-      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Last 10 games from history. Uses the same starting ratings and replay rules as rebuild. If the table does not match, check for older games beyond this window.</p>
-      <label for="recent-games-name">Your name</label>
-      <input type="text" id="recent-games-name" placeholder="e.g. Bryan R" style="max-width: 16rem; margin-bottom: 0.5rem; display: block;">
-      <button type="button" id="recent-games-show" class="btn" style="margin-top: 0.25rem;">Show</button>
-      <div id="recent-games-results" class="rating-gain-results"></div>
-      <button type="button" class="recent-games-close btn btn-secondary" style="margin-top: 1rem;">Close</button>
+      <h3 class="rating-gain-title">Personal review</h3>
+      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">ELO rank and rating, avg points per game, and last 10 games with rating changes.</p>
+      <label for="personal-review-name">Your name</label>
+      <input type="text" id="personal-review-name" placeholder="e.g. Bryan R" style="max-width: 16rem; margin-bottom: 0.5rem; display: block;">
+      <button type="button" id="personal-review-show" class="btn" style="margin-top: 0.25rem;">Show</button>
+      <div id="personal-review-results" class="rating-gain-results"></div>
+      <button type="button" class="personal-review-close btn btn-secondary" style="margin-top: 1rem;">Close</button>
     </div>
   </div>
 
   <div id="rebuild-modal" class="rating-gain-modal" hidden aria-hidden="true">
     <div class="rating-gain-backdrop" aria-label="Close"></div>
     <div class="rating-gain-content rebuild-modal-content">
-      <h3 class="rating-gain-title">Rebuild rankings from history</h3>
-      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Replays all {{ match_count }} stored game(s) in date order. Set each player's rating <em>before</em> those games are applied, then rebuild overwrites the table.</p>
+      <h3 class="rating-gain-title">Rebuild ELO from history</h3>
+      <p style="color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem 0;">Replays all {{ match_count }} stored game(s) in date order. Set each player's ELO <em>before</em> those games are applied. Used for scheduling — not shown on the main rankings table.</p>
       <form method="post" action="{{ url_for('rankings_rebuild') }}" id="rebuild-form">
         {% if rebuild_players %}
         <p style="margin: 0 0 0.5rem 0;">
-          <button type="button" id="rebuild-fill-current" class="btn btn-secondary" style="margin-right: 0.5rem;">Fill from current table</button>
+          <button type="button" id="rebuild-fill-current" class="btn btn-secondary" style="margin-right: 0.5rem;">Fill from current ELO</button>
           <button type="button" id="rebuild-fill-default" class="btn btn-secondary">Reset all to {{ default_rating }}</button>
         </p>
         <div class="rebuild-table-wrap">
           <table class="rebuild-table">
             <thead>
-              <tr><th>Player</th><th>Starting rating</th></tr>
+              <tr><th>Player</th><th>Starting ELO</th></tr>
             </thead>
             <tbody>
               {% for player in rebuild_players %}
@@ -88,7 +106,7 @@
         <label for="rebuild_password">Schedule password</label>
         <input type="password" id="rebuild_password" name="password" placeholder="Password" style="max-width: 14rem; margin-bottom: 0.5rem; display: block;">
         <div class="rebuild-modal-actions">
-          <button type="submit" class="btn btn-secondary">Rebuild rankings</button>
+          <button type="submit" class="btn btn-secondary">Rebuild ELO</button>
           <button type="button" class="rebuild-close btn btn-secondary">Cancel</button>
         </div>
       </form>
@@ -153,6 +171,17 @@
     .recent-game-card .delta-pos { color: var(--success); font-weight: 600; }
     .recent-game-card .delta-neg { color: var(--error); font-weight: 600; }
     .recent-game-card .delta-zero { color: var(--muted); font-weight: 600; }
+    .week-block {
+      border: 1px solid var(--court-line);
+      border-radius: 8px;
+      padding: 0.75rem 0.85rem;
+      margin-bottom: 1rem;
+      background: var(--court);
+    }
+    .week-block h4 { margin: 0 0 0.35rem 0; font-size: 1rem; }
+    .week-block .week-meta { color: var(--muted); font-size: 0.8rem; margin-bottom: 0.5rem; }
+    .week-table { width: 100%; margin: 0; font-size: 0.9rem; }
+    .week-table th, .week-table td { padding: 0.25rem 0.4rem; text-align: left; }
     .rankings-action-link {
       margin-left: 1rem;
       color: var(--accent);
@@ -160,6 +189,7 @@
     }
     .rankings-action-link:hover { text-decoration: underline; }
     .rebuild-modal-content { max-width: 36rem; }
+    .recent-weeks-modal-content { max-width: 40rem; max-height: 85vh; overflow-y: auto; }
     .rebuild-table-wrap {
       max-height: 40vh;
       overflow-y: auto;
@@ -174,9 +204,52 @@
       flex-wrap: wrap;
       margin-top: 0.75rem;
     }
+    .personal-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.25rem;
+      margin: 0.5rem 0 0.75rem 0;
+      font-size: 0.95rem;
+    }
+    .personal-stat { color: var(--muted); }
+    .personal-stat strong { color: var(--text); }
   </style>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
+      function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
+      function formatDate(iso) {
+        if (!iso) return '—';
+        try {
+          var d = new Date(iso);
+          if (isNaN(d.getTime())) return iso;
+          return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+        } catch (e) { return iso; }
+      }
+
+      function scoreLine(m) {
+        if (m.score_team1 != null && m.score_team1 !== '' && m.score_team2 != null && m.score_team2 !== '') {
+          return m.score_team1 + '–' + m.score_team2;
+        }
+        return 'Score not recorded';
+      }
+
+      function winnerLine(m) {
+        if (m.winner === 1) return 'Team 1 won';
+        if (m.winner === 2) return 'Team 2 won';
+        return '';
+      }
+
+      function deltaClass(d) {
+        if (d > 0) return 'delta-pos';
+        if (d < 0) return 'delta-neg';
+        return 'delta-zero';
+      }
+
       var modal = document.getElementById('bio-modal');
       if (modal) {
         var playerEl = document.getElementById('bio-modal-player');
@@ -210,141 +283,154 @@
         });
       }
 
-      var rgBtn = document.getElementById('recent-games-btn');
-      var rgModal = document.getElementById('recent-games-modal');
-      var rgName = document.getElementById('recent-games-name');
-      var rgShow = document.getElementById('recent-games-show');
-      var rgResults = document.getElementById('recent-games-results');
-      var rgBackdrop = rgModal && rgModal.querySelector('.rating-gain-backdrop');
-      var rgClose = rgModal && rgModal.querySelector('.recent-games-close');
-      var rgUrl = {{ url_for('rankings_recent_games')|tojson }};
+      var rwBtn = document.getElementById('recent-weeks-btn');
+      var rwModal = document.getElementById('recent-weeks-modal');
+      var rwResults = document.getElementById('recent-weeks-results');
+      var rwBackdrop = rwModal && rwModal.querySelector('.rating-gain-backdrop');
+      var rwClose = rwModal && rwModal.querySelector('.recent-weeks-close');
+      var rwUrl = {{ url_for('rankings_recent_weeks')|tojson }};
 
-      function escapeHtml(s) {
-        var d = document.createElement('div');
-        d.textContent = s;
-        return d.innerHTML;
-      }
-
-      function formatDate(iso) {
-        if (!iso) return '—';
-        try {
-          var d = new Date(iso);
-          if (isNaN(d.getTime())) return iso;
-          return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-        } catch (e) { return iso; }
-      }
-
-      function showRgModal() {
-        if (!rgModal) return;
-        rgModal.hidden = false;
-        rgModal.setAttribute('aria-hidden', 'false');
-        rgResults.innerHTML = '';
-        rgName.value = '';
-        rgName.focus();
-      }
-
-      function hideRgModal() {
-        if (!rgModal) return;
-        rgModal.hidden = true;
-        rgModal.setAttribute('aria-hidden', 'true');
-      }
-
-      function scoreLine(m) {
-        if (m.score_team1 != null && m.score_team1 !== '' && m.score_team2 != null && m.score_team2 !== '') {
-          return m.score_team1 + '–' + m.score_team2;
-        }
-        return 'Score not recorded';
-      }
-
-      function winnerLine(m) {
-        if (m.winner === 1) return 'Team 1 won';
-        if (m.winner === 2) return 'Team 2 won';
-        return '';
-      }
-
-      function deltaClass(d) {
-        if (d > 0) return 'delta-pos';
-        if (d < 0) return 'delta-neg';
-        return 'delta-zero';
-      }
-
-      function runRecentGames() {
-        var name = (rgName && rgName.value || '').trim();
-        if (!name) {
-          rgResults.innerHTML = '<p style="color: var(--muted);">Enter your name and click Show.</p>';
-          return;
-        }
-        rgResults.innerHTML = '<p style="color: var(--muted);">Loading…</p>';
-        fetch(rgUrl + '?name=' + encodeURIComponent(name))
-          .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, status: r.status, body: j }; }); })
-          .then(function(res) {
-            if (!res.ok) {
-              var msg = (res.body && res.body.message) || res.body.error || 'Request failed';
-              rgResults.innerHTML = '<p style="color: var(--error);">' + escapeHtml(msg) + '</p>';
+      function showRwModal() {
+        if (!rwModal) return;
+        rwModal.hidden = false;
+        rwModal.setAttribute('aria-hidden', 'false');
+        rwResults.innerHTML = '<p style="color: var(--muted);">Loading…</p>';
+        fetch(rwUrl)
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var weeks = data.weeks || [];
+            if (weeks.length === 0) {
+              rwResults.innerHTML = '<p style="color: var(--muted);">No scored games in history yet.</p>';
               return;
             }
-            var matches = res.body.matches || [];
-            var player = res.body.player || name;
-            var currentRating = res.body.current_rating;
-            var replayedRating = res.body.replayed_rating;
-            var startingRating = res.body.starting_rating;
-            var totalGames = res.body.total_games || 0;
-            var lastNDeltaSum = res.body.last_n_delta_sum;
-            var fullDeltaSum = res.body.full_delta_sum;
-            if (matches.length === 0) {
-              rgResults.innerHTML = '<p style="color: var(--muted);">No games in history for <strong>' + escapeHtml(player) + '</strong>.</p>';
-              return;
-            }
-            var parts = ['<p><strong>' + escapeHtml(player) + '</strong>'];
-            if (currentRating != null) {
-              parts.push(' — table rating: <strong>' + currentRating + '</strong>');
-            }
-            if (replayedRating != null) {
-              parts.push(' — full replay: <strong>' + replayedRating + '</strong>');
-            }
-            if (startingRating != null) {
-              parts.push(' (from starting ' + startingRating + ')');
-            }
-            parts.push('</p>');
-            if (totalGames > matches.length) {
-              parts.push('<p style="color: var(--muted); font-size: 0.85rem;">You have <strong>' + totalGames + '</strong> stored game(s) total. Showing last ' + matches.length + '. Rebuild replays all of them.</p>');
-            }
-            if (lastNDeltaSum != null && fullDeltaSum != null && totalGames > matches.length && lastNDeltaSum !== fullDeltaSum) {
-              parts.push('<p style="color: var(--muted); font-size: 0.85rem;">Last ' + matches.length + ' games net <strong>' + (lastNDeltaSum > 0 ? '+' : '') + lastNDeltaSum + '</strong>, but full history net <strong>' + (fullDeltaSum > 0 ? '+' : '') + fullDeltaSum + '</strong>. Older games explain the difference.</p>');
-            }
-            if (replayedRating != null && currentRating != null && replayedRating !== currentRating) {
-              parts.push('<p style="color: var(--error); font-size: 0.85rem;">Replay (' + replayedRating + ') does not match table (' + currentRating + '). Rebuild with correct starting ratings, or remove stray games on Past games.</p>');
-            }
-            parts.push('<p style="margin-top: 0.5rem;">Last ' + matches.length + ' game(s), newest first:</p>');
-            matches.forEach(function(m) {
-              var t1 = (m.team1 || []).join(' & ');
-              var t2 = (m.team2 || []).join(' & ');
-              var d = m.delta;
-              var dc = deltaClass(d);
-              var deltaStr = (d > 0 ? '+' : '') + d;
-              parts.push(
-                '<div class="recent-game-card">' +
-                  '<div class="meta">' + escapeHtml(formatDate(m.date)) + '</div>' +
-                  '<div><strong>' + escapeHtml(t1) + '</strong> vs <strong>' + escapeHtml(t2) + '</strong></div>' +
-                  '<div style="margin-top: 0.25rem;">' + escapeHtml(scoreLine(m)) + ' · ' + escapeHtml(winnerLine(m)) + '</div>' +
-                  '<div style="margin-top: 0.4rem;">Rating: ' + m.rating_before + ' → ' + m.rating_after +
-                  ' <span class="' + dc + '">(' + deltaStr + ')</span></div>' +
-                '</div>'
-              );
+            var parts = [];
+            weeks.forEach(function(w) {
+              parts.push('<div class="week-block">');
+              parts.push('<h4>Week ending ' + escapeHtml(w.week_label || w.week_end) + '</h4>');
+              parts.push('<div class="week-meta">' + w.game_count + ' scored game(s)</div>');
+              parts.push('<table class="week-table"><thead><tr><th>#</th><th>Player</th><th>Avg</th><th>G</th><th>W–L</th></tr></thead><tbody>');
+              (w.rankings || []).forEach(function(row, i) {
+                parts.push('<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(row.player) + '</td><td>' + row.avg + '</td><td>' + row.games + '</td><td>' + row.wins + '–' + row.losses + '</td></tr>');
+              });
+              parts.push('</tbody></table></div>');
             });
-            rgResults.innerHTML = parts.join('');
+            rwResults.innerHTML = parts.join('');
           })
           .catch(function() {
-            rgResults.innerHTML = '<p style="color: var(--error);">Could not load. Try again.</p>';
+            rwResults.innerHTML = '<p style="color: var(--error);">Could not load. Try again.</p>';
           });
       }
 
-      if (rgBtn) rgBtn.addEventListener('click', showRgModal);
-      if (rgShow) rgShow.addEventListener('click', runRecentGames);
-      if (rgName) rgName.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); runRecentGames(); } });
-      if (rgBackdrop) rgBackdrop.addEventListener('click', hideRgModal);
-      if (rgClose) rgClose.addEventListener('click', hideRgModal);
-      if (rgModal) rgModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideRgModal(); });
+      function hideRwModal() {
+        if (!rwModal) return;
+        rwModal.hidden = true;
+        rwModal.setAttribute('aria-hidden', 'true');
+      }
+
+      if (rwBtn) rwBtn.addEventListener('click', showRwModal);
+      if (rwBackdrop) rwBackdrop.addEventListener('click', hideRwModal);
+      if (rwClose) rwClose.addEventListener('click', hideRwModal);
+      if (rwModal) rwModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideRwModal(); });
+
+      var prBtn = document.getElementById('personal-review-btn');
+      var prModal = document.getElementById('personal-review-modal');
+      var prName = document.getElementById('personal-review-name');
+      var prShow = document.getElementById('personal-review-show');
+      var prResults = document.getElementById('personal-review-results');
+      var prBackdrop = prModal && prModal.querySelector('.rating-gain-backdrop');
+      var prClose = prModal && prModal.querySelector('.personal-review-close');
+      var prUrl = {{ url_for('rankings_personal_review')|tojson }};
+
+      function showPrModal() {
+        if (!prModal) return;
+        prModal.hidden = false;
+        prModal.setAttribute('aria-hidden', 'false');
+        prResults.innerHTML = '';
+        prName.value = '';
+        prName.focus();
+      }
+
+      function hidePrModal() {
+        if (!prModal) return;
+        prModal.hidden = true;
+        prModal.setAttribute('aria-hidden', 'true');
+      }
+
+      function runPersonalReview() {
+        var name = (prName && prName.value || '').trim();
+        if (!name) {
+          prResults.innerHTML = '<p style="color: var(--muted);">Enter your name and click Show.</p>';
+          return;
+        }
+        prResults.innerHTML = '<p style="color: var(--muted);">Loading…</p>';
+        fetch(prUrl + '?name=' + encodeURIComponent(name))
+          .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, body: j }; }); })
+          .then(function(res) {
+            if (!res.ok) {
+              var msg = (res.body && res.body.message) || res.body.error || 'Request failed';
+              prResults.innerHTML = '<p style="color: var(--error);">' + escapeHtml(msg) + '</p>';
+              return;
+            }
+            var b = res.body;
+            var player = b.player || name;
+            var matches = b.matches || [];
+            if (matches.length === 0 && !b.scored_games) {
+              prResults.innerHTML = '<p style="color: var(--muted);">No games in history for <strong>' + escapeHtml(player) + '</strong>.</p>';
+              return;
+            }
+            var parts = ['<p><strong>' + escapeHtml(player) + '</strong></p>'];
+            parts.push('<div class="personal-stats">');
+            if (b.elo_rank != null) {
+              parts.push('<span class="personal-stat">ELO rank: <strong>#' + b.elo_rank + '</strong></span>');
+            }
+            if (b.elo_rating != null) {
+              parts.push('<span class="personal-stat">ELO: <strong>' + b.elo_rating + '</strong></span>');
+            }
+            if (b.scored_games) {
+              parts.push('<span class="personal-stat">Avg pts: <strong>' + b.avg_points + '</strong></span>');
+              parts.push('<span class="personal-stat">Scored games: <strong>' + b.scored_games + '</strong> (' + b.scored_wins + '–' + b.scored_losses + ')</span>');
+            }
+            parts.push('</div>');
+            if (b.replayed_rating != null && b.current_rating != null && b.replayed_rating !== b.current_rating) {
+              parts.push('<p style="color: var(--error); font-size: 0.85rem;">ELO replay (' + b.replayed_rating + ') does not match live table (' + b.current_rating + '). Rebuild with correct starting ratings, or remove stray games on Past games.</p>');
+            }
+            if (matches.length === 0) {
+              parts.push('<p style="color: var(--muted);">No ELO game history to show.</p>');
+            } else {
+              if (b.total_games > matches.length) {
+                parts.push('<p style="color: var(--muted); font-size: 0.85rem;">Showing last ' + matches.length + ' of ' + b.total_games + ' game(s) with ELO changes.</p>');
+              }
+              parts.push('<p style="margin-top: 0.5rem;">Recent games, newest first:</p>');
+              matches.forEach(function(m) {
+                var t1 = (m.team1 || []).join(' & ');
+                var t2 = (m.team2 || []).join(' & ');
+                var d = m.delta;
+                var dc = deltaClass(d);
+                var deltaStr = (d > 0 ? '+' : '') + d;
+                parts.push(
+                  '<div class="recent-game-card">' +
+                    '<div class="meta">' + escapeHtml(formatDate(m.date)) + '</div>' +
+                    '<div><strong>' + escapeHtml(t1) + '</strong> vs <strong>' + escapeHtml(t2) + '</strong></div>' +
+                    '<div style="margin-top: 0.25rem;">' + escapeHtml(scoreLine(m)) + ' · ' + escapeHtml(winnerLine(m)) + '</div>' +
+                    '<div style="margin-top: 0.4rem;">ELO: ' + m.rating_before + ' → ' + m.rating_after +
+                    ' <span class="' + dc + '">(' + deltaStr + ')</span></div>' +
+                  '</div>'
+                );
+              });
+            }
+            prResults.innerHTML = parts.join('');
+          })
+          .catch(function() {
+            prResults.innerHTML = '<p style="color: var(--error);">Could not load. Try again.</p>';
+          });
+      }
+
+      if (prBtn) prBtn.addEventListener('click', showPrModal);
+      if (prShow) prShow.addEventListener('click', runPersonalReview);
+      if (prName) prName.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); runPersonalReview(); } });
+      if (prBackdrop) prBackdrop.addEventListener('click', hidePrModal);
+      if (prClose) prClose.addEventListener('click', hidePrModal);
+      if (prModal) prModal.addEventListener('keydown', function(e) { if (e.key === 'Escape') hidePrModal(); });
 
       var rebuildOpen = document.getElementById('rebuild-open');
       var rebuildModal = document.getElementById('rebuild-modal');
@@ -406,7 +492,7 @@
       }
       if (rebuildForm) {
         rebuildForm.addEventListener('submit', function(e) {
-          if (!confirm('Rebuild all rankings using the starting ratings above?')) {
+          if (!confirm('Rebuild all ELO ratings using the starting ratings above?')) {
             e.preventDefault();
           }
         });

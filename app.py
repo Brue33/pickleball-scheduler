@@ -9,6 +9,7 @@ import hashlib
 import os
 from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
+from zoneinfo import ZoneInfo
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from scheduler import (
@@ -28,6 +29,8 @@ from scheduler import (
     DROP_IN_SCHEDULE_FILE,
 )
 
+# League game day is Thursday; week boundaries use US Eastern (EST/EDT).
+GAME_DAY_TZ = ZoneInfo("America/New_York")
 app = Flask(__name__)
 app.secret_key = "pickleball-scheduler-secret-change-in-production"
 
@@ -203,6 +206,146 @@ def get_wins_losses_by_player():
     return {p: {"wins": wins.get(p, 0), "losses": losses.get(p, 0)} for p in set(wins) | set(losses)}
 
 
+def _score_recorded(val):
+    """True if a score was entered (0 counts; missing/blank does not)."""
+    if val is None:
+        return False
+    if isinstance(val, str) and not val.strip():
+        return False
+    return True
+
+
+def match_has_scores(m):
+    """Both team scores recorded (0 is valid)."""
+    return _score_recorded(m.get("score_team1")) and _score_recorded(m.get("score_team2"))
+
+
+def parse_match_eastern_date(m):
+    """Calendar date in US Eastern for a stored match, or None."""
+    raw = m.get("date")
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(GAME_DAY_TZ).date()
+    except (ValueError, TypeError):
+        return None
+
+
+def game_week_end_thursday(d):
+    """Ending Thursday for the Fri–Thu game week containing d (Eastern calendar date)."""
+    days_to_end = (3 - d.weekday()) % 7
+    return d + timedelta(days=days_to_end)
+
+
+def game_week_key(m):
+    """ISO date of the Thursday ending the game week for this match."""
+    d = parse_match_eastern_date(m)
+    if d is None:
+        return None
+    return game_week_end_thursday(d).isoformat()
+
+
+def compute_points_stats(matches):
+    """
+    Per-player stats from matches with scores recorded.
+    Returns dict player -> {points, games, wins, losses, avg}.
+    """
+    stats = {}
+
+    def ensure(player):
+        if player not in stats:
+            stats[player] = {"points": 0, "games": 0, "wins": 0, "losses": 0}
+        return stats[player]
+
+    for m in matches:
+        if not match_has_scores(m):
+            continue
+        s1 = int(m["score_team1"])
+        s2 = int(m["score_team2"])
+        team1 = m.get("team1") or []
+        team2 = m.get("team2") or []
+        winner = m.get("winner")
+        for p in team1:
+            if not p:
+                continue
+            st = ensure(p)
+            st["points"] += s1
+            st["games"] += 1
+            if winner == 1:
+                st["wins"] += 1
+            elif winner == 2:
+                st["losses"] += 1
+        for p in team2:
+            if not p:
+                continue
+            st = ensure(p)
+            st["points"] += s2
+            st["games"] += 1
+            if winner == 2:
+                st["wins"] += 1
+            elif winner == 1:
+                st["losses"] += 1
+    for st in stats.values():
+        st["avg"] = round(st["points"] / st["games"], 2) if st["games"] else 0.0
+    return stats
+
+
+def sort_points_leaderboard(stats):
+    """List of (player, stats) sorted by avg pts/game desc, then wins desc."""
+    return sorted(
+        stats.items(),
+        key=lambda x: (-x[1]["avg"], -x[1]["wins"], x[0].lower()),
+    )
+
+
+def compute_weekly_points_rankings(matches):
+    """Group scored matches into Fri–Thu weeks; newest weeks first."""
+    by_week = {}
+    for m in matches:
+        if not match_has_scores(m):
+            continue
+        wk = game_week_key(m)
+        if not wk:
+            continue
+        by_week.setdefault(wk, []).append(m)
+    weeks = []
+    for wk in sorted(by_week.keys(), reverse=True):
+        stats = compute_points_stats(by_week[wk])
+        board = sort_points_leaderboard(stats)
+        end_date = date.fromisoformat(wk)
+        weeks.append(
+            {
+                "week_end": wk,
+                "week_label": format_game_day_display(end_date),
+                "game_count": len(by_week[wk]),
+                "rankings": [
+                    {
+                        "player": p,
+                        "avg": s["avg"],
+                        "points": s["points"],
+                        "games": s["games"],
+                        "wins": s["wins"],
+                        "losses": s["losses"],
+                    }
+                    for p, s in board
+                ],
+            }
+        )
+    return weeks
+
+
+def elo_rank_for_player(name):
+    """Return (rank, rating) for name in current ELO table, or (None, default)."""
+    sorted_r = sorted(load_rankings().items(), key=lambda x: (-x[1], x[0].lower()))
+    for i, (p, rating) in enumerate(sorted_r, 1):
+        if p == name:
+            return i, int(rating)
+    return None, int(load_rankings().get(name, DEFAULT_RATING))
+
+
 def load_replay_starting_ratings():
     """Starting ratings used when replaying stored games (rebuild / review)."""
     if not REPLAY_STARTING_RATINGS_FILE.exists():
@@ -340,6 +483,9 @@ def recent_games_rating_review(player_query, max_games=10):
     replayed_rating = int(ratings.get(name, starting_rating))
     last_n = rows[-max_games:]
     last_n = list(reversed(last_n))
+    scored_matches = [m for m in load_match_history() if match_has_scores(m)]
+    pts = compute_points_stats(scored_matches).get(name, {})
+    elo_rank, elo_rating = elo_rank_for_player(name)
     return name, {
         "matches": last_n,
         "current_rating": current_rating,
@@ -348,6 +494,13 @@ def recent_games_rating_review(player_query, max_games=10):
         "total_games": len(rows),
         "last_n_delta_sum": sum(m["delta"] for m in last_n),
         "full_delta_sum": replayed_rating - starting_rating,
+        "elo_rank": elo_rank,
+        "elo_rating": elo_rating,
+        "avg_points": pts.get("avg", 0),
+        "total_points": pts.get("points", 0),
+        "scored_games": pts.get("games", 0),
+        "scored_wins": pts.get("wins", 0),
+        "scored_losses": pts.get("losses", 0),
     }
 
 
@@ -377,9 +530,14 @@ def append_match(team1, team2, winner, score_team1=None, score_team2=None, prob_
         json.dump({"matches": matches}, f, indent=2)
 
 
+def game_day_today():
+    """Current calendar date in US Eastern — schedule stays live through midnight Eastern."""
+    return datetime.now(GAME_DAY_TZ).date()
+
+
 def get_next_thursday():
-    """Return the next upcoming Thursday (or today if today is Thursday)."""
-    today = date.today()
+    """Next upcoming game Thursday in Eastern time (today if today is Thursday)."""
+    today = game_day_today()
     days_ahead = (3 - today.weekday() + 7) % 7
     if days_ahead == 0:
         return today
@@ -455,7 +613,7 @@ def _normalize_schedule_display(data):
 
 
 def load_published_schedule():
-    """Load the published schedule for this week; return None if missing or not this week."""
+    """Load the published schedule for this week (Eastern game day); None if missing or expired."""
     next_thu = get_next_thursday()
     date_key = next_thu.isoformat()
     legacy_wed_key = (next_thu - timedelta(days=1)).isoformat()
@@ -520,7 +678,7 @@ def save_drop_in_schedule(day_of_week, time_str, num_courts, players, schedule_e
 
 
 def load_draft_schedule():
-    """Load draft schedule for this week; return None if missing or not this week."""
+    """Load draft schedule for this Eastern game week; None if missing or expired."""
     next_thu = get_next_thursday()
     date_key = next_thu.isoformat()
     legacy_wed_key = (next_thu - timedelta(days=1)).isoformat()
@@ -1672,22 +1830,21 @@ def results():
 
 @app.route("/rankings")
 def rankings():
-    rankings = load_rankings()
-    sorted_rankings = sorted(
-        rankings.items(), key=lambda x: -x[1]
-    ) if rankings else []
+    matches = load_match_history()
+    points_stats = compute_points_stats(matches)
+    points_leaderboard = sort_points_leaderboard(points_stats)
     bios = load_player_bios()
-    wins_losses = get_wins_losses_by_player()
-    match_count = len(load_match_history())
+    match_count = len(matches)
+    scored_match_count = sum(1 for m in matches if match_has_scores(m))
     rebuild_players = all_rebuild_player_names()
     replay_starts = load_replay_starting_ratings()
     current_rankings = load_rankings()
     return render_template(
         "rankings.html",
-        rankings=sorted_rankings,
+        points_leaderboard=points_leaderboard,
         bios=bios,
-        wins_losses=wins_losses,
         match_count=match_count,
+        scored_match_count=scored_match_count,
         rebuild_players=rebuild_players,
         replay_starts=replay_starts,
         current_rankings=current_rankings,
@@ -1722,20 +1879,29 @@ def rankings_rebuild():
     return redirect(url_for("rankings"))
 
 
-@app.route("/rankings/recent-games")
-def rankings_recent_games():
-    """JSON: last 10 matches for a player with replayed rating before/after each."""
+@app.route("/rankings/recent-weeks")
+def rankings_recent_weeks():
+    """JSON: Fri–Thu game weeks with avg pts/game leaderboards (newest first)."""
+    weeks = compute_weekly_points_rankings(load_match_history())
+    return jsonify({"weeks": weeks})
+
+
+@app.route("/rankings/personal-review")
+def rankings_personal_review():
+    """JSON: ELO rank/rating, avg pts/game, and recent game ELO replay for one player."""
     q = request.args.get("name", "").strip()
     if not q:
         return jsonify({"error": "missing_name", "message": "Enter a name."}), 400
     resolved, payload = recent_games_rating_review(q, max_games=10)
     if resolved is None:
         return jsonify(payload), 404
-    return jsonify({
-        "player": resolved,
-        "matches": payload["matches"],
-        "current_rating": payload.get("current_rating"),
-    })
+    return jsonify({"player": resolved, **payload})
+
+
+@app.route("/rankings/recent-games")
+def rankings_recent_games():
+    """Legacy alias for personal review."""
+    return rankings_personal_review()
 
 
 def _export_key_valid():
