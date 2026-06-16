@@ -1430,6 +1430,17 @@ def schedule_unlock_players():
     return redirect(url_for("generate"))
 
 
+def player_name_choices_for_results(schedule_players=None):
+    """Names for result-entry dropdowns/datalist: schedule + roster + anyone with a rating."""
+    choices = set(schedule_players or [])
+    for p in load_players_list():
+        if p:
+            choices.add(p)
+    for p in load_rankings().keys():
+        choices.add(p)
+    return sorted(choices, key=lambda x: x.lower())
+
+
 @app.route("/schedule/record-results")
 def schedule_record_results():
     """Show the result-entry form for the weekly or drop-in schedule."""
@@ -1444,6 +1455,7 @@ def schedule_record_results():
             "schedule_result.html",
             schedule_entries=data["schedule_entries"],
             players=data["players"],
+            player_choices=player_name_choices_for_results(data["players"]),
             rankings=data["rankings"],
             schedule_type="drop_in",
         )
@@ -1456,6 +1468,7 @@ def schedule_record_results():
         "schedule_result.html",
         schedule_entries=published["schedule_entries"],
         players=published["players"],
+        player_choices=player_name_choices_for_results(published["players"]),
         rankings=published["rankings"],
         schedule_type="weekly",
     )
@@ -1807,6 +1820,7 @@ def generate_regenerate():
 def schedule_results():
     """Record winners and optional scores from the schedule result page."""
     count = 0
+    errors = []
     i = 0
     while i < 100:
         team1_0 = request.form.get(f"team1_0_{i}")
@@ -1816,12 +1830,20 @@ def schedule_results():
         winner = request.form.get(f"winner_{i}")
         score_t1 = request.form.get(f"score_team1_{i}")
         score_t2 = request.form.get(f"score_team2_{i}")
-        if not team1_0 and not team1_1:
+        if not team1_0 and not team1_1 and not team2_0 and not team2_1:
             i += 1
             continue
         if team1_0 and team1_1 and team2_0 and team2_1 and winner and winner in ("1", "2"):
             team1 = (team1_0.strip(), team1_1.strip())
             team2 = (team2_0.strip(), team2_1.strip())
+            if not all(team1) or not all(team2):
+                errors.append(f"Game {i + 1}: enter all four player names.")
+                i += 1
+                continue
+            if len(set(team1 + team2)) != 4:
+                errors.append(f"Game {i + 1}: each player can only appear once.")
+                i += 1
+                continue
             s1, s2 = None, None
             if score_t1 not in (None, "") and score_t2 not in (None, ""):
                 try:
@@ -1837,9 +1859,12 @@ def schedule_results():
             append_match(team1, team2, int(winner), s1, s2, prob_team1=prob_team1)
             count += 1
         i += 1
+    if errors:
+        for msg in errors[:5]:
+            flash(msg, "error")
     if count > 0:
         flash(f"Recorded {count} match(es). Rankings and history updated.", "success")
-    else:
+    elif not errors:
         flash("No results to save. Select a winner for each game you played.", "error")
     return redirect(url_for("rankings"))
 
