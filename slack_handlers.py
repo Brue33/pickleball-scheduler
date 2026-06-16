@@ -6,6 +6,33 @@ Each handler returns a dict for Slack's JSON response (text or blocks).
 from datetime import timedelta
 
 
+def _availability_status(entry):
+    if entry is None:
+        return "not_answered"
+    if isinstance(entry, str):
+        val = entry.strip().lower()
+        if val in ("in", "out", "partial", "not_answered"):
+            return val
+        return "not_answered"
+    if isinstance(entry, dict):
+        st = str(entry.get("status", "not_answered")).strip().lower()
+        if st in ("in", "out", "partial", "not_answered"):
+            return st
+    return "not_answered"
+
+
+def _availability_partial_label(entry):
+    if isinstance(entry, dict) and _availability_status(entry) == "partial":
+        when = str(entry.get("when", "start")).strip().lower()
+        when_word = "first" if when == "start" else "last"
+        try:
+            games = int(entry.get("games", 4))
+        except (TypeError, ValueError):
+            games = 4
+        return f"Partial ({when_word} {games})"
+    return None
+
+
 def _availability_for_game_day(availability_all, game_day):
     """Thursday availability; includes legacy Wednesday key for the same week."""
     date_key = game_day.isoformat()
@@ -60,11 +87,15 @@ def handle_pb_availability(player_list, load_availability, get_next_wednesday):
     _, availability = _availability_for_game_day(availability_all, next_game)
     lines = [f"*Games on {next_game.strftime('%A, %B %d')}*"]
     for p in player_list:
-        status = availability.get(p)
+        entry = availability.get(p)
+        status = _availability_status(entry)
         if status == "in":
             lines.append(f"  • {p} — In")
         elif status == "out":
             lines.append(f"  • {p} — Out")
+        elif status == "partial":
+            partial = _availability_partial_label(entry) or "Partial"
+            lines.append(f"  • {p} — {partial}")
         else:
             lines.append(f"  • {p} — _not set_")
     return {"response_type": "ephemeral", "text": "\n".join(lines) if lines else "No players on list."}
@@ -126,11 +157,12 @@ def handle_pb_schedule(player_list, load_availability, get_next_wednesday, load_
         return {"response_type": "ephemeral", "text": "\n".join(lines)}
     availability_all = load_availability()
     _, availability = _availability_for_game_day(availability_all, next_game)
-    in_count = sum(1 for p in player_list if availability.get(p) == "in")
+    in_count = sum(1 for p in player_list if _availability_status(availability.get(p)) == "in")
+    partial_count = sum(1 for p in player_list if _availability_status(availability.get(p)) == "partial")
     text = (
         f"*Next games: {next_game.strftime('%A, %B %d')}*\n"
         f"No schedule published yet for this week.\n"
-        f"Who's in: {in_count} | Use `/pb-in YourName` or `/pb-out YourName` to update.\n"
+        f"Who's in: {in_count}" + (f" (+ {partial_count} partial)" if partial_count else "") + " | Use `/pb-in YourName` or `/pb-out YourName` to update.\n"
         f"Use `/pb-availability` to see the full list.\n"
         f"Generate the schedule from the *Generate* tab on the web app (password required)."
     )

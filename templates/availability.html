@@ -9,17 +9,20 @@
     <p><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
   {% elif read_only %}
     <p style="color: var(--muted); font-size: 0.9rem;">Schedule is already generated. Availability is locked. Enter the schedule password to edit.</p>
-    <table style="max-width: 24rem;">
+    <table style="max-width: 36rem;">
       <thead>
         <tr><th>Player</th><th>Status</th></tr>
       </thead>
       <tbody>
         {% for p in player_list %}
+          {% set row = availability.get(p, {'status': 'not_answered'}) %}
           <tr>
             <td>{{ p }}</td>
             <td>
-              {% if availability.get(p) == 'in' %}<span style="color: var(--success); font-weight: 600;">In</span>
-              {% elif availability.get(p) == 'out' %}<span style="color: var(--error);">Out</span>
+              {% if row.status == 'in' %}<span style="color: var(--success); font-weight: 600;">In</span>
+              {% elif row.status == 'out' %}<span style="color: var(--error);">Out</span>
+              {% elif row.status == 'partial' %}<span style="color: var(--accent); font-weight: 600;">Partial</span>
+                <span style="color: var(--muted); font-size: 0.85rem;"> — {{ row.when|default('start') }} of night, {{ row.games|default(4) }} match{{ 'es' if row.games|default(4) != 1 else '' }}</span>
               {% else %}<span style="color: var(--muted);">Not Answered</span>{% endif %}
             </td>
           </tr>
@@ -32,23 +35,33 @@
       <button type="submit" class="btn btn-secondary" style="margin-top: 0.25rem;">Unlock to edit</button>
     </form>
   {% else %}
-    <p style="color: var(--muted); font-size: 0.9rem;">Set each player's status for the upcoming Thursday game. Default is Not Answered each week.</p>
-    <form method="post" action="{{ url_for('availability') }}">
-      <table style="max-width: 24rem;">
+    <p style="color: var(--muted); font-size: 0.9rem;">Set each player's status for the upcoming Thursday game. <strong>Partial</strong> = only some matches (first or last N games).</p>
+    <form method="post" action="{{ url_for('availability') }}" id="availability-form">
+      <table style="max-width: 42rem;">
         <thead>
-          <tr><th>Player</th><th>Status</th></tr>
+          <tr><th>Player</th><th>Status</th><th>Partial details</th></tr>
         </thead>
         <tbody>
           {% for p in player_list %}
-            {% set current = availability.get(p, 'not_answered') %}
+            {% set row = availability.get(p, {'status': 'not_answered'}) %}
+            {% set current = row.status %}
             <tr>
               <td>{{ p }}</td>
               <td>
-                <select name="avail_{{ p }}" style="max-width: 12rem;">
+                <select name="avail_{{ p }}" class="avail-status-select" data-player="{{ p|e }}" style="max-width: 12rem;">
                   <option value="in" {% if current == 'in' %}selected{% endif %}>In</option>
+                  <option value="partial" {% if current == 'partial' %}selected{% endif %}>Partial</option>
                   <option value="out" {% if current == 'out' %}selected{% endif %}>Out</option>
                   <option value="not_answered" {% if current == 'not_answered' %}selected{% endif %}>Not Answered</option>
                 </select>
+              </td>
+              <td class="partial-fields" data-player="{{ p|e }}" style="{% if current != 'partial' %}opacity: 0.45;{% endif %}">
+                <select name="avail_when_{{ p }}" style="max-width: 8rem; margin-right: 0.35rem;" {% if current != 'partial' %}disabled{% endif %}>
+                  <option value="start" {% if row.get('when', 'start') == 'start' %}selected{% endif %}>First</option>
+                  <option value="end" {% if row.get('when') == 'end' %}selected{% endif %}>Last</option>
+                </select>
+                <input type="number" name="avail_games_{{ p }}" min="1" max="32" value="{{ row.get('games', 4) }}" style="width: 3.5rem;" {% if current != 'partial' %}disabled{% endif %}>
+                <span style="color: var(--muted); font-size: 0.85rem;">matches</span>
               </td>
             </tr>
           {% endfor %}
@@ -56,5 +69,23 @@
       </table>
       <button type="submit" style="margin-top: 0.75rem;">Save availability</button>
     </form>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        function updatePartialRow(select) {
+          var player = select.dataset.player;
+          var isPartial = select.value === 'partial';
+          var cell = document.querySelector('.partial-fields[data-player="' + player + '"]');
+          if (!cell) return;
+          cell.style.opacity = isPartial ? '1' : '0.45';
+          cell.querySelectorAll('select, input').forEach(function(el) {
+            el.disabled = !isPartial;
+          });
+        }
+        document.querySelectorAll('.avail-status-select').forEach(function(sel) {
+          sel.addEventListener('change', function() { updatePartialRow(sel); });
+          updatePartialRow(sel);
+        });
+      });
+    </script>
   {% endif %}
 {% endblock %}

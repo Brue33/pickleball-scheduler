@@ -175,10 +175,38 @@
         <label for="selected_players">Who is playing this week?</label>
         <select id="selected_players" name="selected_players" multiple size="10" style="max-width: 20rem;">
           {% for p in player_list %}
-            <option value="{{ p }}" {% if p in players_in %}selected style="background: var(--surface); color: var(--success); font-weight: 600;"{% endif %}>{{ p }}{% if p in players_in %} ✓ In{% endif %}</option>
+            <option value="{{ p }}" {% if p in players_for_generate %}selected style="background: var(--surface); color: var(--success); font-weight: 600;"{% endif %}>{{ p }}{% if p in players_in %} ✓ In{% elif p in partial_by_player %} ✓ Partial{% endif %}</option>
           {% endfor %}
         </select>
-        <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Players who replied <strong>In</strong> on the Availability tab are pre-selected. Hold Ctrl (Windows/Linux) or Cmd (Mac) to change selection.</p>
+        <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Players marked <strong>In</strong> or <strong>Partial</strong> on Availability are pre-selected. Hold Ctrl (Windows/Linux) or Cmd (Mac) to change selection.</p>
+
+        <p style="font-weight: 600; margin-top: 1.25rem;">Partial players</p>
+        <p style="color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem;">Check anyone playing only part of the night. <strong>First</strong> = their first N matches only; <strong>Last</strong> = their last N matches only.</p>
+        <table class="partial-generate-table" style="max-width: 42rem; margin-top: 0.5rem;">
+          <thead>
+            <tr><th>Player</th><th>Partial</th><th>When</th><th>Matches</th></tr>
+          </thead>
+          <tbody>
+            {% for p in player_list %}
+              {% set pr = partial_by_player.get(p, {}) %}
+              <tr>
+                <td>{{ p }}</td>
+                <td>
+                  <input type="checkbox" name="partial_enabled_{{ p }}" id="partial_enabled_{{ p|e }}" value="on" {% if p in partial_by_player %}checked{% endif %}>
+                </td>
+                <td>
+                  <select name="partial_when_{{ p }}" id="partial_when_{{ p|e }}" style="max-width: 8rem;">
+                    <option value="start" {% if pr.get('when', 'start') == 'start' %}selected{% endif %}>First</option>
+                    <option value="end" {% if pr.get('when') == 'end' %}selected{% endif %}>Last</option>
+                  </select>
+                </td>
+                <td>
+                  <input type="number" name="partial_games_{{ p }}" id="partial_games_{{ p|e }}" min="1" max="32" value="{{ pr.get('games', 4) }}" style="width: 3.5rem;">
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
 
         {% if schedule_players_unlocked %}
           <label for="players_extra">Additional players this week (not on list)</label>

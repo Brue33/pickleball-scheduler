@@ -650,6 +650,68 @@ def save_availability(by_date):
         json.dump(by_date, f, indent=2)
 
 
+def availability_status(entry):
+    """Return in|out|partial|not_answered for a stored availability entry."""
+    if entry is None:
+        return "not_answered"
+    if isinstance(entry, str):
+        val = entry.strip().lower()
+        if val in ("in", "out", "partial", "not_answered"):
+            return val
+        return "not_answered"
+    if isinstance(entry, dict):
+        st = str(entry.get("status", "not_answered")).strip().lower()
+        if st in ("in", "out", "partial", "not_answered"):
+            return st
+    return "not_answered"
+
+
+def availability_partial_meta(entry):
+    """Return {when: start|end, games: int} for partial entries, else None."""
+    if isinstance(entry, dict) and availability_status(entry) == "partial":
+        when = str(entry.get("when", "start")).strip().lower()
+        if when not in ("start", "end"):
+            when = "start"
+        try:
+            games = int(entry.get("games", 4))
+            games = max(1, min(32, games))
+        except (TypeError, ValueError):
+            games = 4
+        return {"when": when, "games": games}
+    return None
+
+
+def build_availability_entry(status, when=None, games=None):
+    """Serialize availability for storage."""
+    status = (status or "not_answered").strip().lower()
+    if status == "partial":
+        w = (when or "start").strip().lower()
+        if w not in ("start", "end"):
+            w = "start"
+        try:
+            g = int(games or 4)
+            g = max(1, min(32, g))
+        except (TypeError, ValueError):
+            g = 4
+        return {"status": "partial", "when": w, "games": g}
+    if status in ("in", "out", "not_answered"):
+        return status
+    return "not_answered"
+
+
+def parse_partial_constraint(when, games):
+    """Normalize partial when/games for scheduler."""
+    w = (when or "start").strip().lower()
+    if w not in ("start", "end"):
+        w = "start"
+    try:
+        g = int(games)
+        g = max(1, min(32, g))
+    except (TypeError, ValueError):
+        g = 4
+    return {"when": w, "games": g}
+
+
 def availability_for_current_week(availability_all):
     """Availability for the upcoming Thursday; merges legacy Wednesday keys for this week."""
     next_thu = get_next_thursday()
@@ -1307,11 +1369,13 @@ def availability():
         # Bulk save: one dropdown per player
         for p in player_list:
             val = request.form.get(f"avail_{p}", "not_answered").strip().lower()
-            if val not in ("in", "out", "not_answered"):
+            when = request.form.get(f"avail_when_{p}", "start")
+            games = request.form.get(f"avail_games_{p}", "4")
+            if val not in ("in", "out", "partial", "not_answered"):
                 val = "not_answered"
             if date_key not in availability_all:
                 availability_all[date_key] = {}
-            availability_all[date_key][p] = val
+            availability_all[date_key][p] = build_availability_entry(val, when, games)
         legacy_key = (get_next_thursday() - timedelta(days=1)).isoformat()
         if legacy_key in availability_all and legacy_key != date_key:
             del availability_all[legacy_key]
@@ -1319,8 +1383,21 @@ def availability():
         flash("Availability saved.", "success")
         return redirect(url_for("availability"))
 
-    # Normalize for display: missing => not_answered
-    availability_display = {p: availability.get(p) or "not_answered" for p in player_list} if player_list else {}
+    # Normalize for display: missing => not_answered; partial includes when/games
+    availability_display = {}
+    if player_list:
+        for p in player_list:
+            entry = availability.get(p)
+            st = availability_status(entry)
+            row = {"status": st}
+            meta = availability_partial_meta(entry)
+            if meta:
+                row["when"] = meta["when"]
+                row["games"] = meta["games"]
+            elif st == "partial":
+                row["when"] = "start"
+                row["games"] = 4
+            availability_display[p] = row
     return render_template(
         "availability.html",
         player_list=player_list,
@@ -1419,7 +1496,21 @@ def generate():
         schedule_players_unlocked = session.get("schedule_players_unlocked", False)
         availability_all = load_availability()
         _, availability = availability_for_current_week(availability_all)
-        players_in = [p for p in player_list if availability.get(p) == "in"]
+        players_in = []
+        players_partial = []
+        players_for_generate = []
+        partial_by_player = {}
+        for p in player_list:
+            entry = availability.get(p)
+            st = availability_status(entry)
+            if st == "in":
+                players_in.append(p)
+                players_for_generate.append(p)
+            elif st == "partial":
+                meta = availability_partial_meta(entry) or {"when": "start", "games": 4}
+                players_partial.append({"player": p, "when": meta["when"], "games": meta["games"]})
+                partial_by_player[p] = meta
+                players_for_generate.append(p)
         draft = load_draft_schedule()
         schedule_difficulty = []
         if draft:
@@ -1434,6 +1525,9 @@ def generate():
             next_wednesday=game_day_display,
             schedule_players_unlocked=schedule_players_unlocked,
             players_in=players_in,
+            players_partial=players_partial,
+            players_for_generate=players_for_generate,
+            partial_by_player=partial_by_player,
             draft_schedule=draft,
             schedule_difficulty=schedule_difficulty,
             review_stats=review_stats,
@@ -1461,6 +1555,23 @@ def generate():
                 players.append(p)
     players = list(dict.fromkeys(players))
 
+    availability_all = load_availability()
+    _, availability = availability_for_current_week(availability_all)
+    player_constraints = {}
+    for p in players:
+        is_partial = request.form.get(f"partial_enabled_{p}") == "on"
+        if not is_partial and availability_status(availability.get(p)) == "partial":
+            is_partial = True
+        if not is_partial:
+            continue
+        when = request.form.get(f"partial_when_{p}", "").strip().lower()
+        games_raw = request.form.get(f"partial_games_{p}", "").strip()
+        if not when or not games_raw:
+            meta = availability_partial_meta(availability.get(p)) or {}
+            when = when or meta.get("when", "start")
+            games_raw = games_raw or str(meta.get("games", 4))
+        player_constraints[p] = parse_partial_constraint(when, games_raw)
+
     games = None
     if games_str:
         try:
@@ -1480,7 +1591,12 @@ def generate():
                 return redirect(url_for("generate"))
             # Number of games is per court; total games = games * num_courts
             total_games = (games * num_courts) if games else None
-            schedule_list, rankings = generate_schedule(players, games_per_round=total_games, num_courts=num_courts)
+            schedule_list, rankings = generate_schedule(
+                players,
+                games_per_round=total_games,
+                num_courts=num_courts,
+                player_constraints=player_constraints,
+            )
             lines = format_schedule(schedule_list, rankings, players=players)
             schedule_entries = build_schedule_entries_from_list(schedule_list, rankings, players, lines)
             add_round_court_and_bye(schedule_entries, players, num_courts=num_courts)

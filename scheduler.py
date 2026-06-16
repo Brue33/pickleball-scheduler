@@ -179,19 +179,22 @@ def update_rankings_for_match(rankings, team1, team2, winner, score_team1=None, 
     return ratings
 
 
-def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, num_courts=None):
+def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, num_courts=None, player_constraints=None):
     """
     players: list of player names (4 or more; odd allowed — byes used as needed).
     games_per_round: number of games to generate (default: enough so each player plays every round).
     max_with: max times same partner in this schedule.
     max_against: max times same opponent in this schedule.
     num_courts: if set, no player appears on more than one court per round (each round has num_courts games).
+    player_constraints: optional {player: {when: 'start'|'end', games: int}} — partial availability.
+      start = first N matches only; end = last N matches only (N matches for that player).
     Returns list of (team1, team2) where each team is (p1, p2).
     With 2 courts, max 8 players per round; extra players get bye for that game.
     """
     n = len(players)
     if n < 4:
         raise ValueError("Need at least 4 players.")
+    player_constraints = dict(player_constraints or {})
     rankings = load_rankings()
     for p in players:
         if p not in rankings:
@@ -214,6 +217,22 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, 
     games_played = defaultdict(int)
     bye_count = defaultdict(int)
     partner_count_this = defaultdict(int)
+    games_target = games_per_round
+
+    def player_eligible(p):
+        if p not in player_constraints:
+            return True
+        c = player_constraints[p]
+        when = c.get("when", "start")
+        cap = int(c.get("games", 1))
+        gp = games_played[p]
+        if gp >= cap:
+            return False
+        if when == "start":
+            return True
+        if when == "end":
+            return len(scheduled) >= games_target - cap
+        return True
 
     def score_pairing(team1, team2):
         p1, p2 = team1
@@ -240,6 +259,32 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, 
         bye_players = [p for p in players if p not in playing]
         for p in bye_players:
             penalty += bye_count[p] * 60
+        # Strongly prefer scheduling partial players who still need matches in their window
+        for p in team1 + team2:
+            if p not in player_constraints:
+                continue
+            c = player_constraints[p]
+            cap = int(c.get("games", 1))
+            gp = games_played[p]
+            if gp >= cap:
+                continue
+            penalty -= 250
+            need = cap - gp
+            remaining = games_target - len(scheduled)
+            when = c.get("when", "start")
+            if when == "start" and remaining <= need * max(1, max_games_per_round):
+                penalty -= 200
+            if when == "end" and len(scheduled) >= games_target - cap:
+                penalty -= 200
+        # Penalize matchups that skip eligible partial players who still need games
+        for p in players:
+            if p not in player_constraints:
+                continue
+            cap = int(player_constraints[p].get("games", 1))
+            if not player_eligible(p) or games_played[p] >= cap:
+                continue
+            if p not in playing:
+                penalty += 1200
         return penalty
 
     def add_pairing(team1, team2):
@@ -258,22 +303,27 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, 
             if p not in playing:
                 bye_count[p] += 1
 
-    available = list(players)
     from random import shuffle
-    shuffle(available)
 
-    # Build all possible 2-player teams from available
-    teams = list(combinations(available, 2))
+    games_in_current_round = 0
+    current_round_capacity = 0
+    players_in_this_round = set()
+
     # Build games: two disjoint teams (no shared player). If num_courts set, no player plays twice in same round.
     for _ in range(games_per_round * 15):
         if len(scheduled) >= games_per_round:
             break
-        round_size = max_games_per_round
-        round_start = (len(scheduled) // round_size) * round_size if round_size else 0
-        players_in_this_round = set()
-        for (t1, t2) in scheduled[round_start:]:
-            players_in_this_round.update(t1)
-            players_in_this_round.update(t2)
+        eligible = [p for p in players if player_eligible(p)]
+        if len(eligible) < 4:
+            break
+        round_capacity = min(max_games_per_round, len(eligible) // 4)
+        if round_capacity < 1:
+            break
+        if games_in_current_round == 0 or games_in_current_round >= current_round_capacity:
+            games_in_current_round = 0
+            current_round_capacity = round_capacity
+            players_in_this_round = set()
+        teams = list(combinations(eligible, 2))
         best = None
         best_penalty = 1e9
         shuffle(teams)
@@ -283,8 +333,10 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, 
                     continue
                 if set(t1) & set(t2):
                     continue
-                if round_size and (set(t1) | set(t2)) & players_in_this_round:
+                if current_round_capacity and (set(t1) | set(t2)) & players_in_this_round:
                     continue  # player already in this round — can only play one court per round
+                if not all(player_eligible(p) for p in t1 + t2):
+                    continue
                 p = score_pairing(t1, t2)
                 if p < best_penalty:
                     best_penalty = p
@@ -293,6 +345,22 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, 
             break
         t1, t2 = best
         add_pairing(t1, t2)
+        players_in_this_round.update(t1)
+        players_in_this_round.update(t2)
+        games_in_current_round += 1
+
+    if player_constraints:
+        for p, c in player_constraints.items():
+            if p not in players:
+                continue
+            cap = int(c.get("games", 1))
+            when = c.get("when", "start")
+            gp = games_played[p]
+            if gp < cap:
+                raise ValueError(
+                    f"Could not schedule {p} for {cap} match(es) ({when} of night). "
+                    f"Only placed {gp}. Try fewer games or adjust who is playing."
+                )
 
     return scheduled, rankings
 
