@@ -301,6 +301,32 @@ def sort_points_leaderboard(stats):
     )
 
 
+def compute_avg_delta_since_prior_week(matches):
+    """
+    Per-player change in all-history avg pts vs end of prior game week (Fri–Thu).
+    Returns dict player -> float delta. Omits players with no scored games before the latest week.
+    """
+    week_keys = sorted(
+        {game_week_key(m) for m in matches if match_has_scores(m) and game_week_key(m)}
+    )
+    if len(week_keys) < 2:
+        return {}
+    latest_week = week_keys[-1]
+    prior_matches = [
+        m
+        for m in matches
+        if match_has_scores(m) and game_week_key(m) and game_week_key(m) < latest_week
+    ]
+    prior_stats = compute_points_stats(prior_matches)
+    current_stats = compute_points_stats(matches)
+    deltas = {}
+    for player, st in current_stats.items():
+        if player not in prior_stats:
+            continue
+        deltas[player] = round(st["avg"] - prior_stats[player]["avg"], 2)
+    return deltas
+
+
 def compute_weekly_points_rankings(matches):
     """Group scored matches into Fri–Thu weeks; newest weeks first."""
     by_week = {}
@@ -2044,6 +2070,10 @@ def rankings():
     matches = load_match_history()
     points_stats = compute_points_stats(matches)
     points_leaderboard = sort_points_leaderboard(points_stats)
+    avg_deltas = compute_avg_delta_since_prior_week(matches)
+    has_prior_week = bool(avg_deltas) or len(
+        {game_week_key(m) for m in matches if match_has_scores(m) and game_week_key(m)}
+    ) >= 2
     bios = load_player_bios()
     match_count = len(matches)
     scored_match_count = sum(1 for m in matches if match_has_scores(m))
@@ -2053,6 +2083,8 @@ def rankings():
     return render_template(
         "rankings.html",
         points_leaderboard=points_leaderboard,
+        avg_deltas=avg_deltas,
+        has_prior_week=has_prior_week,
         bios=bios,
         match_count=match_count,
         scored_match_count=scored_match_count,

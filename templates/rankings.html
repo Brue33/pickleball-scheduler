@@ -4,6 +4,7 @@
   <h1>Rankings</h1>
   <p style="margin-bottom: 0.35rem; color: var(--muted); font-size: 0.9rem;">
     All history · avg points per game (scored games only) · ties broken by wins
+    {% if has_prior_week %} · +/- = change since prior game week{% endif %}
   </p>
   <p style="margin-bottom: 1rem;">
     <button type="button" id="recent-weeks-btn" class="btn btn-secondary">Review recent weeks</button>
@@ -17,7 +18,7 @@
   {% if points_leaderboard %}
     <table>
       <thead>
-        <tr><th>#</th><th>Player</th><th>Avg pts</th><th>Games</th><th>W–L</th></tr>
+        <tr><th>#</th><th>Player</th><th>Avg pts</th>{% if has_prior_week %}<th>+/-</th>{% endif %}<th>Games</th><th>W–L</th></tr>
       </thead>
       <tbody>
         {% for player, st in points_leaderboard %}
@@ -27,6 +28,16 @@
               <button type="button" class="player-name-btn" data-player="{{ player|e }}" data-bio="{{ (bios.get(player, '') or '')|e|replace('\n', '&#10;') }}">{{ player }}</button>
             </td>
             <td>{{ st.avg }}</td>
+            {% if has_prior_week %}
+            <td>
+              {% if player in avg_deltas %}
+                {% set d = avg_deltas[player] %}
+                <span class="{% if d > 0 %}avg-delta-pos{% elif d < 0 %}avg-delta-neg{% else %}avg-delta-zero{% endif %}">{% if d > 0 %}+{% endif %}{{ d }}</span>
+              {% else %}
+                <span class="avg-delta-new">new</span>
+              {% endif %}
+            </td>
+            {% endif %}
             <td>{{ st.games }}</td>
             <td>{{ st.wins }}–{{ st.losses }}</td>
           </tr>
@@ -252,6 +263,10 @@
     }
     .personal-stat { color: var(--muted); }
     .personal-stat strong { color: var(--text); }
+    .avg-delta-pos { color: var(--success); font-weight: 600; }
+    .avg-delta-neg { color: var(--error); font-weight: 600; }
+    .avg-delta-zero { color: var(--muted); }
+    .avg-delta-new { color: var(--muted); font-size: 0.85rem; font-style: italic; }
     .personal-review-modal-content { max-width: 40rem; max-height: 85vh; overflow-y: auto; }
     .personal-games-wrap { margin-top: 0.75rem; }
   </style>
