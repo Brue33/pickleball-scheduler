@@ -1029,17 +1029,26 @@ def build_schedule_entries_from_list(schedule_list, rankings, players, lines=Non
 def schedule_review_stats(schedule_entries, players):
     """
     Return stats for the Review modal: bye count per player, partner (with) counts, opponent (against) counts.
+    Byes are counted per round (not per court): playing any court in a round is not a bye.
     """
     from collections import defaultdict
     bye_count = {p: 0 for p in players}
     with_count = defaultdict(lambda: defaultdict(int))
     against_count = defaultdict(lambda: defaultdict(int))
+    by_round = defaultdict(list)
+    for e in schedule_entries:
+        by_round[e.get("round", 1)].append(e)
+    for entries in by_round.values():
+        playing_this_round = set()
+        for e in entries:
+            playing_this_round.update(e.get("team1") or [])
+            playing_this_round.update(e.get("team2") or [])
+        for p in set(players) - playing_this_round:
+            if p in bye_count:
+                bye_count[p] += 1
     for e in schedule_entries:
         team1 = e.get("team1") or []
         team2 = e.get("team2") or []
-        for p in e.get("bye") or []:
-            if p in bye_count:
-                bye_count[p] += 1
         for i, p in enumerate(team1):
             for q in team1[i + 1:]:
                 with_count[p][q] += 1
