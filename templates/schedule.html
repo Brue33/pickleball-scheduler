@@ -73,7 +73,7 @@
       </div>
     </div>
   {% else %}
-    <p style="color: var(--muted); font-size: 0.9rem;">No schedule published yet for this week. Use the <a href="{{ url_for('generate') }}">Generate</a> tab (password required) to create one.</p>
+    <p style="color: var(--muted); font-size: 0.9rem;">No schedule published yet for this week. Use <a href="{{ url_for('generate') }}">Generate</a> in Commish Tool (password required) to create one.</p>
   {% endif %}
 
   {% if drop_in_schedule %}
@@ -117,7 +117,7 @@
   {% endif %}
 
   {% if not player_list %}
-    <p style="margin-top: 1rem;"><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
+    <p style="margin-top: 1rem;"><a href="{{ url_for('players') }}">Add players to your list</a> first (Commish Tool, password required).</p>
   {% endif %}
 {% endblock %}
 

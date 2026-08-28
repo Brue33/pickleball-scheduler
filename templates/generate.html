@@ -158,7 +158,7 @@
     </div>
     {% endif %}
   {% elif not player_list %}
-    <p><a href="{{ url_for('players') }}">Add players to your list</a> first (Players tab, password protected).</p>
+    <p><a href="{{ url_for('players') }}">Add players to your list</a> first (Commish Tool, password required).</p>
   {% else %}
     <form method="post" action="{{ url_for('generate') }}" id="generate-form">
       <label for="num_courts">Number of courts</label>

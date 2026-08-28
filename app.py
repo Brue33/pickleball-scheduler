@@ -1225,17 +1225,7 @@ def mens_league_players_ordered():
 
 @app.route("/mens-league")
 def mens_league():
-    roster = [MENS_LEAGUE_ROSTER[n] for n in sorted(MENS_LEAGUE_ROSTER)]
-    weeks = load_mens_league_weeks()
-    return render_template(
-        "mens_league.html",
-        mens_league_roster=roster,
-        mens_league_players=mens_league_players_ordered(),
-        mens_league_schedule=build_mens_league_schedule(),
-        mens_league_standings=build_mens_league_standings(),
-        mens_league_weeks=weeks,
-        next_week_label=f"Week {len(weeks) + 1}",
-    )
+    return render_template("mens_league.html")
 
 
 @app.route("/mens-league/standings/unlock", methods=["POST"])
@@ -1281,6 +1271,55 @@ def mens_league_add_week():
     save_mens_league_weeks(weeks)
     flash(f"Saved {week_label} results. Standings updated.", "success")
     return redirect(url_for("mens_league") + "#standings")
+
+
+@app.route("/friends-group")
+def friends_group():
+    """Hub for Friends Group: schedule, availability, rankings, past games."""
+    next_thu = get_next_thursday()
+    next_game_date_display = format_game_day_display(next_thu)
+    published = load_published_schedule()
+    next_game_location_time = ((published or {}).get("time_location") or "").strip() or "Green Lake, 6pm"
+    availability_all = load_availability()
+    _, availability = availability_for_current_week(availability_all)
+    players_in = 0
+    players_partial = 0
+    for p in load_players_list():
+        st = availability_status(availability.get(p))
+        if st == "in":
+            players_in += 1
+        elif st == "partial":
+            players_partial += 1
+    matches = load_match_history()
+    points_board = sort_points_leaderboard(compute_points_stats(matches))
+    top_ranked = points_board[0][0] if points_board else None
+    return render_template(
+        "friends_group.html",
+        next_game_date_display=next_game_date_display,
+        next_game_location_time=next_game_location_time,
+        has_schedule=bool(published),
+        players_in=players_in,
+        players_partial=players_partial,
+        match_count=len(matches),
+        top_ranked=top_ranked,
+    )
+
+
+@app.route("/commish-tool")
+def commish_tool():
+    """Hub for commissioner tools: generate schedule and manage players."""
+    next_thu = get_next_thursday()
+    next_game_date_display = format_game_day_display(next_thu)
+    published = load_published_schedule()
+    next_game_location_time = ((published or {}).get("time_location") or "").strip() or "Green Lake, 6pm"
+    return render_template(
+        "commish_tool.html",
+        next_game_date_display=next_game_date_display,
+        next_game_location_time=next_game_location_time,
+        has_schedule=bool(published),
+        has_draft=bool(load_draft_schedule()),
+        player_count=len(load_players_list()),
+    )
 
 
 @app.route("/")

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Commish Tool — Mitten Smash{% endblock %}
+{% block content %}
+  <header class="fg-header">
+    <h1>Commish Tool</h1>
+    <p class="fg-tagline">Commissioner tools — build schedules and manage the player roster.</p>
+    <div class="fg-next-game">
+      <span class="fg-next-label">Next game</span>
+      <strong>{{ next_game_location_time }}</strong>
+      <span class="fg-next-date">{{ next_game_date_display }}</span>
+    </div>
+  </header>
+
+  <div class="fg-grid">
+    <a href="{{ url_for('generate') }}" class="fg-card">
+      <span class="fg-card-icon" aria-hidden="true">G</span>
+      <h2 class="fg-card-title">Generate</h2>
+      <p class="fg-card-desc">Build this week's schedule, review matchups, and publish to the group.</p>
+      <p class="fg-card-meta {% if has_schedule %}fg-meta-ok{% elif has_draft %}fg-meta-muted{% else %}fg-meta-muted{% endif %}">
+        {% if has_schedule %}Schedule published{% elif has_draft %}Draft saved — not published{% else %}No draft yet{% endif %}
+      </p>
+    </a>
+
+    <a href="{{ url_for('players') }}" class="fg-card">
+      <span class="fg-card-icon" aria-hidden="true">P</span>
+      <h2 class="fg-card-title">Players</h2>
+      <p class="fg-card-desc">Add or remove players, set starting Elo, and edit bios.</p>
+      <p class="fg-card-meta fg-meta-muted">{{ player_count }} player{{ 's' if player_count != 1 else '' }} on the roster</p>
+    </a>
+  </div>
+
+  <p class="ct-note">Both tools require a password. You'll be prompted to log in when you open them.</p>
+{% endblock %}
+
+{% block head %}
+  <style>
+    .fg-header { margin-bottom: 1.75rem; }
+    .fg-header h1 { font-size: 1.75rem; margin-bottom: 0.35rem; }
+    .fg-tagline { color: var(--muted); margin: 0 0 1.25rem 0; font-size: 1rem; }
+    .fg-next-game {
+      display: inline-block;
+      background: var(--court);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+      padding: 0.85rem 1.15rem;
+      line-height: 1.4;
+    }
+    .fg-next-label {
+      display: block;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.2rem;
+    }
+    .fg-next-game strong { color: var(--accent); font-size: 1.05rem; }
+    .fg-next-date { display: block; color: var(--text); font-size: 0.95rem; margin-top: 0.15rem; }
+    .fg-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+      gap: 1rem;
+      max-width: 52rem;
+    }
+    .fg-card {
+      display: block;
+      background: var(--surface);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+      padding: 1.15rem 1.25rem;
+      text-decoration: none;
+      color: var(--text);
+      transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+    }
+    .fg-card:hover {
+      text-decoration: none;
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    }
+    .fg-card-icon {
+      font-size: 0.85rem;
+      font-weight: 700;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 8px;
+      background: var(--court);
+      border: 2px solid var(--court-line);
+      color: var(--accent);
+      margin-bottom: 0.65rem;
+    }
+    .fg-card-title { margin: 0 0 0.4rem 0; font-size: 1.15rem; color: var(--accent); }
+    .fg-card-desc { margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--muted); line-height: 1.45; }
+    .fg-card-meta { margin: 0; font-size: 0.85rem; color: var(--text); }
+    .fg-meta-ok { color: var(--success); font-weight: 600; }
+    .fg-meta-muted { color: var(--muted); }
+    .ct-note { margin-top: 1.25rem; font-size: 0.9rem; color: var(--muted); max-width: 52rem; }
+    @media (max-width: 480px) {
+      .fg-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+{% endblock %}

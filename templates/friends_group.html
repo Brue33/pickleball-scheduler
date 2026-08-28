@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Friends Group — Mitten Smash{% endblock %}
+{% block content %}
+  <header class="fg-header">
+    <h1>Friends Group</h1>
+    <p class="fg-tagline">Thursday doubles — rotating partners, every point counts.</p>
+    <div class="fg-next-game">
+      <span class="fg-next-label">Next game</span>
+      <strong>{{ next_game_location_time }}</strong>
+      <span class="fg-next-date">{{ next_game_date_display }}</span>
+    </div>
+  </header>
+
+  <div class="fg-grid">
+    <a href="{{ url_for('schedule') }}" class="fg-card">
+      <span class="fg-card-icon" aria-hidden="true">S</span>
+      <h2 class="fg-card-title">Schedule</h2>
+      <p class="fg-card-desc">This week's courts, matchups, and win chances.</p>
+      <p class="fg-card-meta {% if has_schedule %}fg-meta-ok{% else %}fg-meta-muted{% endif %}">
+        {% if has_schedule %}Published for this week{% else %}Not published yet{% endif %}
+      </p>
+    </a>
+
+    <a href="{{ url_for('availability') }}" class="fg-card">
+      <span class="fg-card-icon" aria-hidden="true">A</span>
+      <h2 class="fg-card-title">Availability</h2>
+      <p class="fg-card-desc">Mark yourself in, out, or partial for next Thursday.</p>
+      <p class="fg-card-meta">
+        <strong>{{ players_in }}</strong> in{% if players_partial %} · <strong>{{ players_partial }}</strong> partial{% endif %}
+      </p>
+    </a>
+
+    <a href="{{ url_for('rankings') }}" class="fg-card">
+      <span class="fg-card-icon" aria-hidden="true">R</span>
+      <h2 class="fg-card-title">Rankings</h2>
+      <p class="fg-card-desc">Avg points per game, weekly review, and personal stats.</p>
+      <p class="fg-card-meta fg-meta-muted">
+        {% if top_ranked %}{{ top_ranked }} leads the board{% else %}No scored games yet{% endif %}
+      </p>
+    </a>
+
+    <a href="{{ url_for('history') }}" class="fg-card">
+      <span class="fg-card-icon" aria-hidden="true">P</span>
+      <h2 class="fg-card-title">Past games</h2>
+      <p class="fg-card-desc">Full match history, scores, and outcomes.</p>
+      <p class="fg-card-meta fg-meta-muted">{{ match_count }} game{{ 's' if match_count != 1 else '' }} recorded</p>
+    </a>
+  </div>
+{% endblock %}
+
+{% block head %}
+  <style>
+    .fg-header { margin-bottom: 1.75rem; }
+    .fg-header h1 { font-size: 1.75rem; margin-bottom: 0.35rem; }
+    .fg-tagline { color: var(--muted); margin: 0 0 1.25rem 0; font-size: 1rem; }
+    .fg-next-game {
+      display: inline-block;
+      background: var(--court);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+      padding: 0.85rem 1.15rem;
+      line-height: 1.4;
+    }
+    .fg-next-label {
+      display: block;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.2rem;
+    }
+    .fg-next-game strong { color: var(--accent); font-size: 1.05rem; }
+    .fg-next-date { display: block; color: var(--text); font-size: 0.95rem; margin-top: 0.15rem; }
+    .fg-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+      gap: 1rem;
+      max-width: 52rem;
+    }
+    .fg-card {
+      display: block;
+      background: var(--surface);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+      padding: 1.15rem 1.25rem;
+      text-decoration: none;
+      color: var(--text);
+      transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+    }
+    .fg-card:hover {
+      text-decoration: none;
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    }
+    .fg-card-icon {
+      font-size: 0.85rem;
+      font-weight: 700;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 8px;
+      background: var(--court);
+      border: 2px solid var(--court-line);
+      color: var(--accent);
+      margin-bottom: 0.65rem;
+    }
+    .fg-card-title { margin: 0 0 0.4rem 0; font-size: 1.15rem; color: var(--accent); }
+    .fg-card-desc { margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--muted); line-height: 1.45; }
+    .fg-card-meta { margin: 0; font-size: 0.85rem; color: var(--text); }
+    .fg-meta-ok { color: var(--success); font-weight: 600; }
+    .fg-meta-muted { color: var(--muted); }
+    @media (max-width: 480px) {
+      .fg-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+{% endblock %}
