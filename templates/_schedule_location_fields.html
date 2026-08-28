@@ -1,0 +1,9 @@
+{# field_id prefix, picker from court_picker_state, schedule_time value #}
+<div class="schedule-location-fields">
+  {% with label='Court / location', required=false %}
+    {% include "_court_location_select.html" %}
+  {% endwith %}
+  <label for="{{ field_id }}-schedule-time" style="margin-top: 0.75rem;">Time <span class="cb-optional" style="color: var(--muted); font-weight: normal; font-size: 0.85rem;">(optional)</span></label>
+  <input type="text" id="{{ field_id }}-schedule-time" name="schedule_time" value="{{ schedule_time|e }}"
+         placeholder="e.g. 6pm" maxlength="80" style="max-width: 14rem;">
+</div>

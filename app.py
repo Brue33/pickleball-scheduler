@@ -37,6 +37,15 @@ app = Flask(__name__)
 app.secret_key = "pickleball-scheduler-secret-change-in-production"
 app.config["MAX_CONTENT_LENGTH"] = 6 * 1024 * 1024
 
+
+@app.context_processor
+def court_location_template_helpers():
+    return {
+        "court_location_list": court_location_choices,
+        "court_picker_state": court_location_picker_context,
+        "split_time_location": split_time_location,
+    }
+
 # Data directory: use PICKLEBALL_DATA_DIR if set (persists across code deploys), else same folder as app
 _data_dir_raw = os.environ.get("PICKLEBALL_DATA_DIR")
 _DATA_DIR = Path(_data_dir_raw) if _data_dir_raw else Path(__file__).resolve().parent
@@ -56,6 +65,7 @@ COURT_BOOKINGS_FILE = _DATA_DIR / "court_bookings.json"
 REPLAY_STARTING_RATINGS_FILE = _DATA_DIR / "replay_starting_ratings.json"
 PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
+COURTS_PASSWORD = "PBCourts26"
 DROP_IN_SCHEDULE_DAYS = 14
 
 OPEN_DROP_IN_TIME_SLOTS = {
@@ -1171,6 +1181,10 @@ def format_drop_in_request_display(req, hub=None):
         "roster": roster,
         "can_generate": len(roster) >= 4,
         "time_location_default": time_location_default,
+        "schedule_court_default": (req.get("court") or "").strip(),
+        "schedule_time_default": ""
+        if req.get("time_mode") == "flexible"
+        else (req.get("time") or "").strip(),
         "schedule_label": drop_in_schedule_label(req),
         "has_schedule": has_schedule,
         "has_draft": has_draft,
@@ -1847,7 +1861,7 @@ def _drop_in_redirect(tab="requests", request_id=None, schedule_id=None, open_id
 def friends_group_drop_in_request():
     """Post a drop-in request: who needs a game, court, day, and optional time."""
     requester = request.form.get("requester", "").strip()
-    court = request.form.get("court", "").strip()
+    court = resolve_court_location(request.form)
     play_date_str = request.form.get("play_date", "").strip()
     time_mode = request.form.get("time_mode", "specific").strip()
     time_str = request.form.get("time", "").strip()
@@ -1894,7 +1908,7 @@ def friends_group_drop_in_request():
 def drop_in_open_post():
     """Post open-to-drop-in availability: name, court, dates, time slot."""
     player = request.form.get("player", "").strip()
-    court = request.form.get("court", "").strip()
+    court = resolve_court_location(request.form)
     dates = _normalize_open_dates(request.form.getlist("open_dates"), min_date=_drop_in_requests_today())
     time_slot = request.form.get("time_slot", "any").strip()
     if time_slot not in OPEN_DROP_IN_TIME_SLOTS:
@@ -1952,7 +1966,6 @@ def drop_in_open_convert():
     """Convert an open listing into a full drop-in request for a specific day."""
     open_id = request.form.get("open_id", "").strip()
     requester = request.form.get("requester", "").strip()
-    court = request.form.get("court", "").strip()
     play_date_str = request.form.get("play_date", "").strip()
     time_mode = request.form.get("time_mode", "specific").strip()
     time_str = request.form.get("time", "").strip()
@@ -1968,8 +1981,7 @@ def drop_in_open_convert():
 
     if not requester:
         requester = (target.get("player") or "").strip()
-    if not court:
-        court = (target.get("court") or "").strip()
+    court = resolve_court_location(request.form) or (target.get("court") or "").strip()
     if requester.lower() != (target.get("player") or "").strip().lower():
         flash("Only the person who posted can convert this to a full request.", "error")
         return _drop_in_redirect(open_id=open_id)
@@ -2119,7 +2131,7 @@ def drop_in_remove_guest():
 def drop_in_generate_schedule():
     request_id = request.form.get("request_id", "").strip()
     games_str = request.form.get("games", "").strip()
-    time_location = request.form.get("time_location", "").strip()
+    time_location = build_time_location_from_form(request.form)
     num_courts = 2
     try:
         nc = request.form.get("num_courts", "2").strip()
@@ -2532,6 +2544,76 @@ def save_court_bookings(courts):
         json.dump({"courts": courts}, f, indent=2)
 
 
+def court_location_choices():
+    """Sorted unique court names from the court bookings list."""
+    names = []
+    seen = set()
+    for court in load_court_bookings():
+        name = (court.get("name") or "").strip()
+        key = name.lower()
+        if name and key not in seen:
+            seen.add(key)
+            names.append(name)
+    return sorted(names, key=str.lower)
+
+
+def court_location_picker_context(selected=""):
+    """Template state for court dropdown + optional other text field."""
+    choices = court_location_choices()
+    selected = (selected or "").strip()
+    if selected in choices:
+        return {
+            "court_selected": selected,
+            "court_other_value": "",
+            "court_is_other": False,
+        }
+    return {
+        "court_selected": "__other__" if selected else "",
+        "court_other_value": selected,
+        "court_is_other": bool(selected),
+    }
+
+
+def split_time_location(time_location):
+    """Split combined time/location into (court_name, time_str)."""
+    tl = (time_location or "").strip()
+    if not tl:
+        return "", ""
+    for name in sorted(court_location_choices(), key=len, reverse=True):
+        if tl == name:
+            return name, ""
+        for sep in (", ", ","):
+            prefix = name + sep
+            if tl.startswith(prefix):
+                return name, tl[len(prefix):].strip()
+    return "", tl
+
+
+def resolve_court_location(form):
+    """Resolve court/location from dropdown + optional other field."""
+    selected = form.get("court_select", "").strip()
+    other = form.get("court_other", "").strip()
+    if selected == "__other__":
+        return other
+    if selected:
+        return selected
+    return form.get("court", "").strip()
+
+
+def build_time_location_from_form(form, fallback=""):
+    """Build schedule time/location from court picker + optional time field."""
+    court = resolve_court_location(form)
+    time_str = form.get("schedule_time", "").strip()
+    if court and time_str:
+        return f"{court}, {time_str}"
+    if court:
+        return court
+    if time_str:
+        return time_str
+    legacy = form.get("time_location", "").strip()
+    return legacy or (fallback or "").strip()
+
+
 def _court_booking_url_valid(url):
     url = (url or "").strip()
     return url.startswith("http://") or url.startswith("https://")
@@ -2597,57 +2679,41 @@ def format_court_booking_display(court):
     }
 
 
-def _court_bookings_redirect(show_add=False):
-    url = url_for("court_bookings_page")
+def _court_bookings_redirect(show_add=False, edit_mode=False, court_id=None, edit_prompt=False):
+    kwargs = {}
     if show_add:
-        url += "?add=1"
-    return redirect(url + "#courts")
+        kwargs["add"] = "1"
+    if edit_mode:
+        kwargs["edit"] = "1"
+    if court_id:
+        kwargs["court"] = court_id
+    if edit_prompt:
+        kwargs["edit_prompt"] = "1"
+    return redirect(url_for("court_bookings_page", **kwargs) + "#courts")
 
 
-@app.route("/court-bookings")
-def court_bookings_page():
-    show_add = (request.args.get("add") or "").strip() == "1"
-    courts = [
-        format_court_booking_display(c)
-        for c in sorted(load_court_bookings(), key=lambda c: (c.get("name") or "").lower())
-    ]
-    return render_template(
-        "court_bookings.html",
-        courts=courts,
-        show_add=show_add,
-        indoor_outdoor_options=COURT_INDOOR_OUTDOOR_OPTIONS,
-        net_style_options=COURT_NET_STYLE_OPTIONS,
-        cost_options=COURT_COST_OPTIONS,
-    )
-
-
-@app.route("/court-bookings/add", methods=["POST"])
-def court_bookings_add():
-    name = request.form.get("name", "").strip()
-    city = request.form.get("city", "").strip()
-    address = request.form.get("address", "").strip()
-    num_courts_raw = request.form.get("num_courts", "").strip()
-    indoor_outdoor = request.form.get("indoor_outdoor", "").strip()
-    net_style = request.form.get("net_style", "").strip()
-    booking_cost = request.form.get("booking_cost", "").strip()
-    bookable = request.form.get("bookable", "no").strip() == "yes"
-    booking_url = request.form.get("booking_url", "").strip()
+def _parse_court_form_data(form):
+    """Validate add/edit court form. Returns (data dict, error message)."""
+    name = form.get("name", "").strip()
+    city = form.get("city", "").strip()
+    address = form.get("address", "").strip()
+    num_courts_raw = form.get("num_courts", "").strip()
+    indoor_outdoor = form.get("indoor_outdoor", "").strip()
+    net_style = form.get("net_style", "").strip()
+    booking_cost = form.get("booking_cost", "").strip()
+    bookable = form.get("bookable", "no").strip() == "yes"
+    booking_url = form.get("booking_url", "").strip()
 
     if not name:
-        flash("Court name is required.", "error")
-        return _court_bookings_redirect(show_add=True)
+        return None, "Court name is required."
     if not city:
-        flash("City is required.", "error")
-        return _court_bookings_redirect(show_add=True)
+        return None, "City is required."
     if indoor_outdoor not in COURT_INDOOR_OUTDOOR_OPTIONS:
-        flash("Select indoor, outdoor, or both.", "error")
-        return _court_bookings_redirect(show_add=True)
+        return None, "Select indoor, outdoor, or both."
     if net_style and net_style not in COURT_NET_STYLE_OPTIONS:
-        flash("Select a valid net style.", "error")
-        return _court_bookings_redirect(show_add=True)
+        return None, "Select a valid net style."
     if booking_cost and booking_cost not in COURT_COST_OPTIONS:
-        flash("Select a valid cost option.", "error")
-        return _court_bookings_redirect(show_add=True)
+        return None, "Select a valid cost option."
 
     num_courts = None
     if num_courts_raw:
@@ -2656,22 +2722,17 @@ def court_bookings_add():
             if num_courts < 1:
                 raise ValueError
         except ValueError:
-            flash("Number of courts must be a positive whole number.", "error")
-            return _court_bookings_redirect(show_add=True)
+            return None, "Number of courts must be a positive whole number."
 
     if bookable:
         if not booking_url:
-            flash("Please provide a booking link.", "error")
-            return _court_bookings_redirect(show_add=True)
+            return None, "Please provide a booking link."
         if not _court_booking_url_valid(booking_url):
-            flash("Booking link must start with http:// or https://", "error")
-            return _court_bookings_redirect(show_add=True)
+            return None, "Booking link must start with http:// or https://"
     else:
         booking_url = ""
 
-    courts = load_court_bookings()
-    courts.append({
-        "id": secrets.token_hex(8),
+    return {
         "name": name[:80],
         "city": city[:80],
         "address": address[:120],
@@ -2681,11 +2742,93 @@ def court_bookings_add():
         "booking_cost": booking_cost,
         "bookable": bookable,
         "booking_url": booking_url[:500],
+    }, None
+
+
+@app.route("/court-bookings")
+def court_bookings_page():
+    show_add = (request.args.get("add") or "").strip() == "1"
+    show_edit_prompt = (request.args.get("edit_prompt") or "").strip() == "1"
+    edit_mode = bool(session.get("courts_edit_authenticated"))
+    editing_court_id = (request.args.get("court") or "").strip()
+    courts = [
+        format_court_booking_display(c)
+        for c in sorted(load_court_bookings(), key=lambda c: (c.get("name") or "").lower())
+    ]
+    editing_court = next((c for c in courts if c.get("id") == editing_court_id), None)
+    if editing_court_id and edit_mode and not editing_court:
+        flash("That court could not be found.", "error")
+        editing_court_id = ""
+    return render_template(
+        "court_bookings.html",
+        courts=courts,
+        show_add=show_add,
+        show_edit_prompt=show_edit_prompt,
+        edit_mode=edit_mode,
+        editing_court_id=editing_court_id if editing_court else "",
+        editing_court=editing_court,
+        indoor_outdoor_options=COURT_INDOOR_OUTDOOR_OPTIONS,
+        net_style_options=COURT_NET_STYLE_OPTIONS,
+        cost_options=COURT_COST_OPTIONS,
+    )
+
+
+@app.route("/court-bookings/add", methods=["POST"])
+def court_bookings_add():
+    data, err = _parse_court_form_data(request.form)
+    if err:
+        flash(err, "error")
+        return _court_bookings_redirect(show_add=True)
+    courts = load_court_bookings()
+    courts.append({
+        "id": secrets.token_hex(8),
+        **data,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     save_court_bookings(courts)
-    flash(f"Added {name}.", "success")
+    flash(f"Added {data['name']}.", "success")
     return _court_bookings_redirect()
+
+
+@app.route("/court-bookings/edit/unlock", methods=["POST"])
+def court_bookings_edit_unlock():
+    if request.form.get("password", "").strip() == COURTS_PASSWORD:
+        session["courts_edit_authenticated"] = True
+        flash("Edit mode unlocked. Click a court to edit it.", "success")
+        return _court_bookings_redirect(edit_mode=True)
+    flash("Incorrect password.", "error")
+    return _court_bookings_redirect(edit_prompt=True)
+
+
+@app.route("/court-bookings/edit/lock", methods=["POST"])
+def court_bookings_edit_lock():
+    session.pop("courts_edit_authenticated", None)
+    flash("Edit mode locked.", "success")
+    return _court_bookings_redirect()
+
+
+@app.route("/court-bookings/edit", methods=["POST"])
+def court_bookings_edit():
+    if not session.get("courts_edit_authenticated"):
+        flash("Enter the edit password first.", "error")
+        return _court_bookings_redirect(edit_prompt=True)
+    court_id = request.form.get("court_id", "").strip()
+    if not court_id:
+        flash("Missing court.", "error")
+        return _court_bookings_redirect(edit_mode=True)
+    data, err = _parse_court_form_data(request.form)
+    if err:
+        flash(err, "error")
+        return _court_bookings_redirect(edit_mode=True, court_id=court_id)
+    courts = load_court_bookings()
+    target = next((c for c in courts if c.get("id") == court_id), None)
+    if not target:
+        flash("That court could not be found.", "error")
+        return _court_bookings_redirect(edit_mode=True)
+    target.update(data)
+    save_court_bookings(courts)
+    flash(f"Updated {data['name']}.", "success")
+    return _court_bookings_redirect(edit_mode=True)
 
 
 @app.route("/commish-tool")
@@ -3007,7 +3150,7 @@ def generate():
     selected = request.form.getlist("selected_players")
     players_extra = request.form.get("players_extra", "").strip() if session.get("schedule_players_unlocked") else ""
     games_str = request.form.get("games", "").strip()
-    time_location = request.form.get("time_location", "").strip()
+    time_location = build_time_location_from_form(request.form)
     num_courts = 2
     try:
         nc = request.form.get("num_courts", "2").strip()
@@ -3154,7 +3297,7 @@ def generate_publish():
         schedule_entries = entries
     else:
         schedule_entries = draft["schedule_entries"]
-    time_location = request.form.get("time_location", "").strip() or draft.get("time_location", "")
+    time_location = build_time_location_from_form(request.form, draft.get("time_location", ""))
 
     is_drop_in = request.form.get("is_drop_in") == "on"
     if is_drop_in:
@@ -3203,7 +3346,7 @@ def _save_draft_from_form(draft, rankings_for_probs=None, success_message="Draft
         flash(err, "error")
         return redirect(url_for("generate"))
     add_round_court_and_bye(entries, draft["players"], draft.get("num_courts"))
-    time_location = request.form.get("time_location", "").strip() or draft.get("time_location", "")
+    time_location = build_time_location_from_form(request.form, draft.get("time_location", ""))
     is_drop_in = request.form.get("is_drop_in") == "on"
     drop_in_day = request.form.get("drop_in_day", "").strip()
     drop_in_time = request.form.get("drop_in_time", "").strip()

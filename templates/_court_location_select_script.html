@@ -1,0 +1,21 @@
+<script>
+if (!window._courtLocationPickerInit) {
+  window._courtLocationPickerInit = true;
+  document.addEventListener('DOMContentLoaded', function() {
+    function updateCourtOther(selectEl) {
+      var fieldId = selectEl.getAttribute('data-field-id');
+      var wrap = document.getElementById(fieldId + '-court-other-wrap');
+      var otherInput = document.getElementById(fieldId + '-court-other');
+      if (!wrap || !otherInput) return;
+      var isOther = selectEl.value === '__other__';
+      wrap.hidden = !isOther;
+      if (isOther) otherInput.setAttribute('required', 'required');
+      else otherInput.removeAttribute('required');
+    }
+    document.querySelectorAll('.court-select').forEach(function(el) {
+      updateCourtOther(el);
+      el.addEventListener('change', function() { updateCourtOther(el); });
+    });
+  });
+}
+</script>

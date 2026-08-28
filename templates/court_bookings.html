@@ -4,81 +4,74 @@
   <header class="fg-header">
     <h1>Court Bookings</h1>
     <p class="fg-tagline">Local courts and links to book a spot — add new courts anytime.</p>
-    <button type="button" class="btn" id="add-court-toggle" aria-expanded="{{ 'true' if show_add else 'false' }}" aria-controls="add-court-panel">
-      {{ 'Hide form' if show_add else 'Add a court' }}
-    </button>
+    <div class="cb-header-actions">
+      <button type="button" class="btn" id="add-court-toggle" aria-expanded="{{ 'true' if show_add else 'false' }}" aria-controls="add-court-panel">
+        {{ 'Hide form' if show_add else 'Add a court' }}
+      </button>
+      {% if edit_mode %}
+        <form method="post" action="{{ url_for('court_bookings_edit_lock') }}" class="cb-inline-form">
+          <button type="submit" class="btn btn-secondary">Exit edit mode</button>
+        </form>
+      {% else %}
+        <button type="button" class="btn btn-secondary" id="edit-list-toggle" aria-expanded="{{ 'true' if show_edit_prompt else 'false' }}" aria-controls="edit-password-panel">
+          {{ 'Hide edit' if show_edit_prompt else 'Edit list' }}
+        </button>
+      {% endif %}
+    </div>
   </header>
+
+  {% if edit_mode %}
+    <p class="cb-edit-banner">Edit mode — click a court below to update it.</p>
+  {% endif %}
+
+  <div id="edit-password-panel" class="cb-form-panel" {% if not show_edit_prompt or edit_mode %}hidden{% endif %}>
+    <h2 class="cb-form-title">Edit court list</h2>
+    <form method="post" action="{{ url_for('court_bookings_edit_unlock') }}" class="cb-form">
+      <label for="edit-password">Password</label>
+      <input type="password" id="edit-password" name="password" placeholder="Password" required style="max-width: 14rem;">
+      <button type="submit">Unlock edit mode</button>
+    </form>
+  </div>
 
   <div id="add-court-panel" class="cb-form-panel" {% if not show_add %}hidden{% endif %}>
     <h2 class="cb-form-title">Add a court</h2>
-    <form method="post" action="{{ url_for('court_bookings_add') }}" class="cb-form">
+    <form method="post" action="{{ url_for('court_bookings_add') }}" class="cb-form" data-court-form="add">
       <div class="cb-form-grid">
-        <div>
-          <label for="court-name">Name</label>
-          <input type="text" id="court-name" name="name" placeholder="e.g. YMCA Green Lake" required maxlength="80">
-        </div>
-        <div>
-          <label for="court-city">City</label>
-          <input type="text" id="court-city" name="city" placeholder="e.g. Seattle" required maxlength="80">
-        </div>
-        <div>
-          <label for="court-address">Address <span class="cb-optional">(optional)</span></label>
-          <input type="text" id="court-address" name="address" placeholder="e.g. 123 Main St" maxlength="120">
-        </div>
-        <div>
-          <label for="court-count">Number of courts <span class="cb-optional">(optional)</span></label>
-          <input type="number" id="court-count" name="num_courts" min="1" max="99" placeholder="e.g. 4" style="max-width: 8rem;">
-        </div>
-        <div>
-          <label for="court-io">Indoor or outdoor</label>
-          <select id="court-io" name="indoor_outdoor" required style="max-width: 14rem;">
-            <option value="">Select…</option>
-            {% for key, label in indoor_outdoor_options.items() %}
-              <option value="{{ key }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label for="court-net">Net style <span class="cb-optional">(optional)</span></label>
-          <select id="court-net" name="net_style" style="max-width: 16rem;">
-            <option value="">Select…</option>
-            {% for key, label in net_style_options.items() %}
-              <option value="{{ key }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label for="court-cost">Cost to book <span class="cb-optional">(optional)</span></label>
-          <select id="court-cost" name="booking_cost" style="max-width: 14rem;">
-            <option value="">Select…</option>
-            {% for key, label in cost_options.items() %}
-              <option value="{{ key }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="cb-bookable-block">
-          <span class="cb-field-label">Bookable online?</span>
-          <label class="cb-radio">
-            <input type="radio" name="bookable" value="yes" class="cb-bookable-radio">
-            Yes
-          </label>
-          <label class="cb-radio">
-            <input type="radio" name="bookable" value="no" checked class="cb-bookable-radio">
-            No
-          </label>
-        </div>
-        <div id="booking-url-wrap" class="cb-url-wrap" hidden>
-          <label for="court-url">Booking link</label>
-          <input type="url" id="court-url" name="booking_url" placeholder="https://…" maxlength="500">
-        </div>
+        {% with form_prefix='add', court={} %}
+          {% include "_court_form_fields.html" %}
+        {% endwith %}
       </div>
       <button type="submit">Add court</button>
     </form>
   </div>
 
+  {% if edit_mode and editing_court %}
+    <div id="edit-court-panel" class="cb-form-panel cb-edit-panel">
+      <h2 class="cb-form-title">Edit {{ editing_court.name }}</h2>
+      <form method="post" action="{{ url_for('court_bookings_edit') }}" class="cb-form" data-court-form="edit">
+        <input type="hidden" name="court_id" value="{{ editing_court.id }}">
+        <div class="cb-form-grid">
+          {% with form_prefix='edit', court=editing_court %}
+            {% include "_court_form_fields.html" %}
+          {% endwith %}
+        </div>
+        <button type="submit">Save changes</button>
+        <a href="{{ url_for('court_bookings_page', edit='1') }}#courts" class="btn btn-secondary" style="margin-left: 0.5rem;">Cancel</a>
+      </form>
+    </div>
+  {% endif %}
+
   <div id="courts" class="fg-grid">
     {% for court in courts %}
-      {% if court.external_url %}
+      {% if edit_mode %}
+        <a href="{{ url_for('court_bookings_page', edit='1', court=court.id) }}#courts"
+           class="fg-card {% if editing_court_id == court.id %}fg-card-editing{% endif %}">
+          <span class="fg-card-icon" aria-hidden="true">{{ court.icon }}</span>
+          <h2 class="fg-card-title">{{ court.name }}</h2>
+          <p class="fg-card-desc">{{ court.desc }}</p>
+          <p class="fg-card-meta fg-meta-muted">Click to edit</p>
+        </a>
+      {% elif court.external_url %}
         <a href="{{ court.external_url }}" class="fg-card" target="_blank" rel="noopener noreferrer">
           <span class="fg-card-icon" aria-hidden="true">{{ court.icon }}</span>
           <h2 class="fg-card-title">{{ court.name }}</h2>
@@ -105,7 +98,19 @@
     .fg-header { margin-bottom: 1.75rem; }
     .fg-header h1 { font-size: 1.75rem; margin-bottom: 0.35rem; }
     .fg-tagline { color: var(--muted); margin: 0 0 1rem 0; font-size: 1rem; }
-    .fg-header .btn { margin-top: 0; }
+    .cb-header-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .cb-header-actions .btn { margin-top: 0; }
+    .cb-inline-form { margin: 0; display: inline; }
+    .cb-edit-banner {
+      margin: 0 0 1rem 0;
+      padding: 0.65rem 0.85rem;
+      background: rgba(184, 233, 134, 0.12);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      color: var(--accent);
+      font-size: 0.95rem;
+      max-width: 52rem;
+    }
     .cb-form-panel {
       background: var(--court);
       border: 2px solid var(--court-line);
@@ -114,6 +119,7 @@
       margin-bottom: 1.25rem;
       max-width: 52rem;
     }
+    .cb-edit-panel { border-color: var(--accent); }
     .cb-form-title { margin: 0 0 0.75rem 0; font-size: 1.05rem; color: var(--accent); }
     .cb-form-grid {
       display: grid;
@@ -147,6 +153,10 @@
       border-color: var(--accent);
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    }
+    .fg-card-editing {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
     }
     .fg-card-static { cursor: default; }
     .fg-card-static:hover {
@@ -186,32 +196,52 @@
   </style>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
-      var toggle = document.getElementById('add-court-toggle');
-      var panel = document.getElementById('add-court-panel');
-      if (toggle && panel) {
-        toggle.addEventListener('click', function() {
-          var open = panel.hidden;
-          panel.hidden = !open;
-          toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-          toggle.textContent = open ? 'Hide form' : 'Add a court';
+      var addToggle = document.getElementById('add-court-toggle');
+      var addPanel = document.getElementById('add-court-panel');
+      if (addToggle && addPanel) {
+        addToggle.addEventListener('click', function() {
+          var open = addPanel.hidden;
+          addPanel.hidden = !open;
+          addToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          addToggle.textContent = open ? 'Hide form' : 'Add a court';
         });
       }
 
-      var urlWrap = document.getElementById('booking-url-wrap');
-      var urlInput = document.getElementById('court-url');
-      function updateBookingUrl() {
-        var yes = document.querySelector('.cb-bookable-radio[value="yes"]:checked');
-        var show = !!yes;
-        if (urlWrap) urlWrap.hidden = !show;
-        if (urlInput) {
-          if (show) urlInput.setAttribute('required', 'required');
-          else urlInput.removeAttribute('required');
-        }
+      var editToggle = document.getElementById('edit-list-toggle');
+      var editPanel = document.getElementById('edit-password-panel');
+      if (editToggle && editPanel) {
+        editToggle.addEventListener('click', function() {
+          var open = editPanel.hidden;
+          editPanel.hidden = !open;
+          editToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          editToggle.textContent = open ? 'Hide edit' : 'Edit list';
+        });
       }
+
+      function updateBookingUrl(formPrefix) {
+        var wrap = document.getElementById(formPrefix + '-booking-url-wrap');
+        var input = document.getElementById(formPrefix + '-court-url');
+        if (!wrap || !input) return;
+        var yes = document.querySelector('.cb-bookable-radio[data-form="' + formPrefix + '"][value="yes"]:checked');
+        var show = !!yes;
+        wrap.hidden = !show;
+        if (show) input.setAttribute('required', 'required');
+        else input.removeAttribute('required');
+      }
+
       document.querySelectorAll('.cb-bookable-radio').forEach(function(el) {
-        el.addEventListener('change', updateBookingUrl);
+        el.addEventListener('change', function() {
+          updateBookingUrl(el.getAttribute('data-form'));
+        });
       });
-      updateBookingUrl();
+      ['add', 'edit'].forEach(function(prefix) {
+        updateBookingUrl(prefix);
+      });
+
+      {% if editing_court_id %}
+      var editPanelEl = document.getElementById('edit-court-panel');
+      if (editPanelEl) editPanelEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      {% endif %}
     });
   </script>
 {% endblock %}

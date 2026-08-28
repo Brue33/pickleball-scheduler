@@ -1,0 +1,21 @@
+{# field_id: unique prefix for element ids #}
+{# picker: dict from court_picker_state() #}
+{# label: field label #}
+{# required: whether selection is required #}
+<div class="court-location-picker" data-field-id="{{ field_id }}">
+  <label for="{{ field_id }}-court-select">{{ label }}</label>
+  <select id="{{ field_id }}-court-select" name="court_select" class="court-select" data-field-id="{{ field_id }}"
+          {% if required %}required{% endif %} style="max-width: 18rem;">
+    <option value="">Select…</option>
+    {% for name in court_location_list() %}
+      <option value="{{ name|e }}" {% if picker.court_selected == name %}selected{% endif %}>{{ name }}</option>
+    {% endfor %}
+    <option value="__other__" {% if picker.court_selected == '__other__' %}selected{% endif %}>Other…</option>
+  </select>
+  <div id="{{ field_id }}-court-other-wrap" class="court-other-wrap" {% if not picker.court_is_other %}hidden{% endif %}>
+    <label for="{{ field_id }}-court-other">Other location</label>
+    <input type="text" id="{{ field_id }}-court-other" name="court_other"
+           value="{{ picker.court_other_value|e }}" placeholder="Enter court or location" maxlength="120"
+           style="max-width: 18rem;" {% if required and picker.court_is_other %}required{% endif %}>
+  </div>
+</div>

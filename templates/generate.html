@@ -17,8 +17,11 @@
     </p>
     <form method="post" action="{{ url_for('generate_save_draft') }}" id="draft-form">
       <p style="margin-bottom: 0.75rem;">
-        <label for="time_location">Time &amp; location (optional)</label>
-        <input type="text" id="time_location" name="time_location" value="{{ draft_schedule.get('time_location', '')|e }}" placeholder="e.g. 6pm at Pickle U" style="max-width: 20rem;">
+        {% set draft_court, draft_time = split_time_location(draft_schedule.get('time_location', '')) %}
+        {% set picker = court_picker_state(draft_court) %}
+        {% with field_id='draft', schedule_time=draft_time %}
+          {% include "_schedule_location_fields.html" %}
+        {% endwith %}
       </p>
       <p style="margin-bottom: 0.75rem;">
         <input type="checkbox" id="draft_is_drop_in" name="is_drop_in" value="on" {% if draft_schedule.get('is_drop_in') %}checked{% endif %}>
@@ -254,8 +257,12 @@
         <p style="color: var(--muted); font-size: 0.9rem;">Each round uses all courts once.</p>
       </div>
 
-      <label for="time_location" style="display: block; margin-top: 1rem;">Time &amp; location (optional)</label>
-      <input type="text" id="time_location" name="time_location" placeholder="e.g. 6pm at Pickle U" style="max-width: 20rem;">
+      <div style="margin-top: 1rem;">
+        {% set picker = court_picker_state('') %}
+        {% with field_id='generate', schedule_time='' %}
+          {% include "_schedule_location_fields.html" %}
+        {% endwith %}
+      </div>
       <button type="submit" style="margin-top: 1rem;">Generate schedule</button>
     </form>
     <script>
@@ -346,4 +353,5 @@
     });
   </script>
   {% endif %}
+  {% include "_court_location_select_script.html" %}
 {% endblock %}

@@ -38,8 +38,10 @@
               </select>
             </div>
             <div>
-              <label for="dropin-court">Court / location</label>
-              <input type="text" id="dropin-court" name="court" placeholder="e.g. Court 2 or Green Lake" required maxlength="80">
+              {% set picker = court_picker_state('') %}
+              {% with field_id='dropin', label='Court / location', required=true %}
+                {% include "_court_location_select.html" %}
+              {% endwith %}
             </div>
             <div>
               <label for="dropin-date">Day</label>
@@ -75,8 +77,10 @@
               </select>
             </div>
             <div>
-              <label for="open-court">Court / location</label>
-              <input type="text" id="open-court" name="court" placeholder="e.g. Court 2 or Green Lake" required maxlength="80">
+              {% set picker = court_picker_state('') %}
+              {% with field_id='open', label='Court / location', required=true %}
+                {% include "_court_location_select.html" %}
+              {% endwith %}
             </div>
             <div class="di-open-dates-block">
               <span class="di-time-label">Dates you want to play</span>
@@ -120,7 +124,10 @@
                   <form method="post" action="{{ url_for('drop_in_open_convert') }}">
                     <input type="hidden" name="open_id" value="{{ open.id }}">
                     <input type="hidden" name="requester" value="{{ open.player|e }}">
-                    <input type="hidden" name="court" value="{{ open.court|e }}">
+                    {% set picker = court_picker_state(open.court) %}
+                    {% with field_id='convert-' ~ open.id, label='Court / location', required=true %}
+                      {% include "_court_location_select.html" %}
+                    {% endwith %}
                     <label for="convert-date-{{ open.id }}">Pick a date</label>
                     {% if open.date_options|length == 1 %}
                       <input type="hidden" name="play_date" value="{{ open.date_options[0].iso }}">
@@ -225,8 +232,10 @@
                       <label for="games-{{ req.id }}">Games per court (optional)</label>
                       <input type="number" id="games-{{ req.id }}" name="games" min="1" max="32" placeholder="e.g. 8" style="width: 5rem;">
                       <p class="di-hint">Leave games blank for a default rotation.</p>
-                      <label for="time-location-{{ req.id }}">Time &amp; location</label>
-                      <input type="text" id="time-location-{{ req.id }}" name="time_location" value="{{ req.time_location_default|e }}" style="max-width: 22rem;">
+                      {% set picker = court_picker_state(req.schedule_court_default) %}
+                      {% with field_id='gen-' ~ req.id, schedule_time=req.schedule_time_default %}
+                        {% include "_schedule_location_fields.html" %}
+                      {% endwith %}
                       <input type="hidden" name="rotate_partners" value="on">
                       <button type="submit" class="btn">Generate schedule</button>
                     </form>
@@ -697,4 +706,5 @@
       {% endif %}
     });
   </script>
+  {% include "_court_location_select_script.html" %}
 {% endblock %}
