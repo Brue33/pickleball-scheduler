@@ -12,7 +12,8 @@ from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
 from zoneinfo import ZoneInfo
 
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
 from scheduler import (
     generate_schedule,
     load_rankings,
@@ -34,6 +35,7 @@ from scheduler import (
 GAME_DAY_TZ = ZoneInfo("America/New_York")
 app = Flask(__name__)
 app.secret_key = "pickleball-scheduler-secret-change-in-production"
+app.config["MAX_CONTENT_LENGTH"] = 6 * 1024 * 1024
 
 # Data directory: use PICKLEBALL_DATA_DIR if set (persists across code deploys), else same folder as app
 _data_dir_raw = os.environ.get("PICKLEBALL_DATA_DIR")
@@ -48,6 +50,9 @@ AVAILABILITY_FILE = _DATA_DIR / "availability.json"
 MENS_LEAGUE_STANDINGS_FILE = _DATA_DIR / "mens_league_standings.json"
 DROP_IN_REQUESTS_FILE = _DATA_DIR / "drop_in_requests.json"
 DROP_IN_HUB_FILE = _DATA_DIR / "drop_in_hub.json"
+RESALE_FILE = _DATA_DIR / "pickleball_resale.json"
+RESALE_IMAGES_DIR = _DATA_DIR / "resale_images"
+COURT_BOOKINGS_FILE = _DATA_DIR / "court_bookings.json"
 REPLAY_STARTING_RATINGS_FILE = _DATA_DIR / "replay_starting_ratings.json"
 PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
@@ -61,10 +66,36 @@ OPEN_DROP_IN_TIME_SLOTS = {
 }
 
 PICKLE_U_LEAGUE_TABS = {
-    "mens": {"label": "Men's League", "title": "Men's League at Pickle U"},
-    "coed": {"label": "Coed League", "title": "Coed League at Pickle U"},
-    "womens": {"label": "Women's League", "title": "Women's League at Pickle U"},
+    "mens": {
+        "label": "Men's League",
+        "title": "Men's League at Pickle U",
+        "icon": "M",
+        "desc": "Men's doubles league — standings and weekly results.",
+        "meta": "More info to come",
+    },
+    "coed": {
+        "label": "Coed League",
+        "title": "Coed League at Pickle U",
+        "icon": "C",
+        "desc": "Coed doubles league — standings and weekly results.",
+        "meta": "More info to come",
+    },
+    "womens": {
+        "label": "Women's League",
+        "title": "Women's League at Pickle U",
+        "icon": "W",
+        "desc": "Women's doubles league — standings and weekly results.",
+        "meta": "More info to come",
+    },
 }
+
+RESALE_COMMENT_TYPES = {
+    "offer": "Offer",
+    "interested": "Interested",
+    "trade": "Trade",
+}
+RESALE_ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
+RESALE_MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 SKILL_LEVEL_OPTIONS = [
     ("below_2", "Below 2.0", 1000),
@@ -1644,14 +1675,14 @@ def mens_league_players_ordered():
 @app.route("/pickle-u-leagues")
 @app.route("/mens-league")
 def pickle_u_leagues():
-    tab = (request.args.get("tab") or "mens").strip().lower()
+    tab = (request.args.get("tab") or "").strip().lower()
     if tab not in PICKLE_U_LEAGUE_TABS:
-        tab = "mens"
+        tab = ""
     return render_template(
         "pickle_u_leagues.html",
         tab=tab,
         league_tabs=PICKLE_U_LEAGUE_TABS,
-        active_league=PICKLE_U_LEAGUE_TABS[tab],
+        active_league=PICKLE_U_LEAGUE_TABS.get(tab),
     )
 
 
@@ -1706,7 +1737,7 @@ def friends_group():
     next_thu = get_next_thursday()
     next_game_date_display = format_game_day_display(next_thu)
     published = load_published_schedule()
-    next_game_location_time = ((published or {}).get("time_location") or "").strip() or "Green Lake, 6pm"
+    next_game_location_time = "YMCA 5:30pm"
     availability_all = load_availability()
     _, availability = availability_for_current_week(availability_all)
     players_in = 0
@@ -2225,6 +2256,389 @@ def drop_in_delete_schedule():
     save_drop_in_hub(hub)
     flash("Drop-in schedule deleted.", "success")
     return _drop_in_redirect(tab="schedule")
+
+
+def load_resale_listings():
+    if not RESALE_FILE.exists():
+        return []
+    try:
+        with open(RESALE_FILE) as f:
+            data = json.load(f)
+        listings = data.get("listings", [])
+        return listings if isinstance(listings, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def save_resale_listings(listings):
+    RESALE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    with open(RESALE_FILE, "w") as f:
+        json.dump({"listings": listings}, f, indent=2)
+
+
+def active_resale_listings():
+    active = []
+    for item in load_resale_listings():
+        if item.get("status") != "open":
+            continue
+        active.append(item)
+    active.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    return active
+
+
+def _resale_image_allowed(filename):
+    if not filename or "." not in filename:
+        return False
+    ext = filename.rsplit(".", 1)[1].lower()
+    return ext in RESALE_ALLOWED_IMAGE_EXTENSIONS
+
+
+def _resale_comment_display(comment):
+    ctype = comment.get("type", "offer")
+    if ctype not in RESALE_COMMENT_TYPES:
+        ctype = "offer"
+    name = (comment.get("name") or "").strip()
+    message = (comment.get("message") or "").strip()
+    created = comment.get("created_at", "")
+    try:
+        created_display = datetime.fromisoformat(created).astimezone(GAME_DAY_TZ).strftime("%b %-d")
+    except (ValueError, TypeError):
+        created_display = ""
+    label = RESALE_COMMENT_TYPES[ctype]
+    if ctype == "interested":
+        detail = "Interested"
+    elif message:
+        detail = f"{label}: {message}"
+    else:
+        detail = label
+    return {
+        **comment,
+        "type": ctype,
+        "name": name,
+        "type_label": label,
+        "detail": detail,
+        "created_display": created_display,
+    }
+
+
+def format_resale_listing_display(item):
+    seller = (item.get("seller") or "").strip()
+    title = (item.get("title") or "").strip()
+    price = (item.get("price") or "").strip()
+    image = (item.get("image") or "").strip()
+    created = item.get("created_at", "")
+    try:
+        created_display = datetime.fromisoformat(created).astimezone(GAME_DAY_TZ).strftime("%b %-d, %Y")
+    except (ValueError, TypeError):
+        created_display = ""
+    comments = [
+        _resale_comment_display(c)
+        for c in (item.get("comments") or [])
+        if isinstance(c, dict)
+    ]
+    comments.sort(key=lambda c: c.get("created_at", ""))
+    return {
+        **item,
+        "seller": seller,
+        "title": title,
+        "price": price,
+        "image": image,
+        "image_url": url_for("resale_image", filename=image) if image else None,
+        "created_display": created_display,
+        "comments": comments,
+    }
+
+
+def _resale_redirect(tab="listings", listing_id=None):
+    kwargs = {"tab": tab}
+    if listing_id:
+        kwargs["listing"] = listing_id
+    return redirect(url_for("pickleball_resale_page", **kwargs) + "#resale")
+
+
+@app.route("/pickleball-resale")
+def pickleball_resale_page():
+    tab = (request.args.get("tab") or "listings").strip().lower()
+    if tab not in ("listings", "post"):
+        tab = "listings"
+    active_listing_id = (request.args.get("listing") or "").strip()
+    listings = [format_resale_listing_display(item) for item in active_resale_listings()]
+    return render_template(
+        "pickleball_resale.html",
+        tab=tab,
+        listings=listings,
+        listing_count=len(listings),
+        player_list=load_players_list(),
+        comment_types=RESALE_COMMENT_TYPES,
+        active_listing_id=active_listing_id,
+    )
+
+
+@app.route("/pickleball-resale/images/<path:filename>")
+def resale_image(filename):
+    safe_name = secure_filename(filename)
+    if not safe_name or safe_name != filename:
+        return "Not found", 404
+    if not (RESALE_IMAGES_DIR / safe_name).is_file():
+        return "Not found", 404
+    return send_from_directory(RESALE_IMAGES_DIR, safe_name)
+
+
+@app.route("/pickleball-resale/post", methods=["POST"])
+def pickleball_resale_post():
+    seller = request.form.get("seller", "").strip()
+    title = request.form.get("title", "").strip()
+    price = request.form.get("price", "").strip()
+    image_file = request.files.get("image")
+
+    if not seller:
+        flash("Please select your name.", "error")
+        return _resale_redirect(tab="post")
+    if not title:
+        flash("Please enter an item title.", "error")
+        return _resale_redirect(tab="post")
+    if not price:
+        flash("Please enter a price.", "error")
+        return _resale_redirect(tab="post")
+    if not image_file or not image_file.filename:
+        flash("Please upload an image of the item.", "error")
+        return _resale_redirect(tab="post")
+    if not _resale_image_allowed(image_file.filename):
+        flash("Image must be JPG, PNG, GIF, or WebP.", "error")
+        return _resale_redirect(tab="post")
+
+    image_file.stream.seek(0, os.SEEK_END)
+    size = image_file.stream.tell()
+    image_file.stream.seek(0)
+    if size > RESALE_MAX_IMAGE_BYTES:
+        flash("Image must be 5 MB or smaller.", "error")
+        return _resale_redirect(tab="post")
+
+    listing_id = secrets.token_hex(8)
+    ext = image_file.filename.rsplit(".", 1)[1].lower()
+    image_name = f"{listing_id}.{ext}"
+    RESALE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    image_file.save(RESALE_IMAGES_DIR / image_name)
+
+    listings = load_resale_listings()
+    listings.append({
+        "id": listing_id,
+        "seller": seller,
+        "title": title[:120],
+        "price": price[:40],
+        "image": image_name,
+        "status": "open",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "closed_at": None,
+        "comments": [],
+    })
+    save_resale_listings(listings)
+    flash(f"Posted “{title}”.", "success")
+    return _resale_redirect(listing_id=listing_id)
+
+
+@app.route("/pickleball-resale/comment", methods=["POST"])
+def pickleball_resale_comment():
+    listing_id = request.form.get("listing_id", "").strip()
+    name = request.form.get("name", "").strip()
+    comment_type = request.form.get("comment_type", "offer").strip()
+    message = request.form.get("message", "").strip()
+
+    if not listing_id or not name:
+        flash("Please select your name.", "error")
+        return _resale_redirect()
+    if comment_type not in RESALE_COMMENT_TYPES:
+        comment_type = "offer"
+    if comment_type in ("offer", "trade") and not message:
+        flash("Please enter your offer or trade details.", "error")
+        return _resale_redirect(listing_id=listing_id)
+
+    listings = load_resale_listings()
+    target = next((item for item in listings if item.get("id") == listing_id), None)
+    if not target or target.get("status") != "open":
+        flash("That listing is no longer available.", "error")
+        return _resale_redirect()
+    target.setdefault("comments", []).append({
+        "id": secrets.token_hex(6),
+        "name": name,
+        "type": comment_type,
+        "message": message[:300],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    save_resale_listings(listings)
+    flash("Response posted.", "success")
+    return _resale_redirect(listing_id=listing_id)
+
+
+@app.route("/pickleball-resale/close", methods=["POST"])
+def pickleball_resale_close():
+    listing_id = request.form.get("listing_id", "").strip()
+    seller_name = request.form.get("seller_name", "").strip()
+    if not listing_id:
+        flash("Missing listing.", "error")
+        return _resale_redirect()
+    if not seller_name:
+        flash("Enter the seller's name to mark this item closed.", "error")
+        return _resale_redirect(listing_id=listing_id)
+
+    listings = load_resale_listings()
+    target = next((item for item in listings if item.get("id") == listing_id), None)
+    if not target or target.get("status") != "open":
+        flash("That listing is no longer available.", "error")
+        return _resale_redirect()
+    expected = (target.get("seller") or "").strip()
+    if seller_name.lower() != expected.lower():
+        flash(f"Name must match the seller ({expected}).", "error")
+        return _resale_redirect(listing_id=listing_id)
+
+    target["status"] = "closed"
+    target["closed_at"] = datetime.now(timezone.utc).isoformat()
+    save_resale_listings(listings)
+    flash("Listing marked closed.", "success")
+    return _resale_redirect()
+
+
+def load_court_bookings():
+    if not COURT_BOOKINGS_FILE.exists():
+        return []
+    try:
+        with open(COURT_BOOKINGS_FILE) as f:
+            data = json.load(f)
+        courts = data.get("courts", [])
+        return courts if isinstance(courts, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def save_court_bookings(courts):
+    with open(COURT_BOOKINGS_FILE, "w") as f:
+        json.dump({"courts": courts}, f, indent=2)
+
+
+def _court_booking_url_valid(url):
+    url = (url or "").strip()
+    return url.startswith("http://") or url.startswith("https://")
+
+
+def format_court_booking_display(court):
+    name = (court.get("name") or "").strip()
+    indoor_outdoor = court.get("indoor_outdoor", "indoor")
+    if indoor_outdoor not in ("indoor", "outdoor"):
+        indoor_outdoor = "indoor"
+    io_label = "Indoor" if indoor_outdoor == "indoor" else "Outdoor"
+    num_courts = court.get("num_courts")
+    net_style = (court.get("net_style") or "").strip()
+    bookable = bool(court.get("bookable"))
+    booking_url = (court.get("booking_url") or "").strip()
+
+    desc_parts = [io_label]
+    if num_courts is not None and num_courts != "":
+        try:
+            n = int(num_courts)
+            if n > 0:
+                desc_parts.append(f"{n} court{'s' if n != 1 else ''}")
+        except (TypeError, ValueError):
+            pass
+    if net_style:
+        desc_parts.append(net_style)
+
+    if bookable and booking_url:
+        meta = "Book online →"
+        meta_class = "fg-meta-ok"
+        external_url = booking_url
+    elif bookable:
+        meta = "Bookable — link missing"
+        meta_class = "fg-meta-muted"
+        external_url = None
+    else:
+        meta = "Not bookable online"
+        meta_class = "fg-meta-muted"
+        external_url = None
+
+    icon = name[0].upper() if name else "C"
+    return {
+        **court,
+        "name": name,
+        "icon": icon,
+        "desc": " · ".join(desc_parts),
+        "meta": meta,
+        "meta_class": meta_class,
+        "external_url": external_url,
+        "bookable": bookable,
+    }
+
+
+def _court_bookings_redirect(show_add=False):
+    url = url_for("court_bookings_page")
+    if show_add:
+        url += "?add=1"
+    return redirect(url + "#courts")
+
+
+@app.route("/court-bookings")
+def court_bookings_page():
+    show_add = (request.args.get("add") or "").strip() == "1"
+    courts = [
+        format_court_booking_display(c)
+        for c in sorted(load_court_bookings(), key=lambda c: (c.get("name") or "").lower())
+    ]
+    return render_template(
+        "court_bookings.html",
+        courts=courts,
+        show_add=show_add,
+    )
+
+
+@app.route("/court-bookings/add", methods=["POST"])
+def court_bookings_add():
+    name = request.form.get("name", "").strip()
+    num_courts_raw = request.form.get("num_courts", "").strip()
+    indoor_outdoor = request.form.get("indoor_outdoor", "").strip()
+    net_style = request.form.get("net_style", "").strip()
+    bookable = request.form.get("bookable", "no").strip() == "yes"
+    booking_url = request.form.get("booking_url", "").strip()
+
+    if not name:
+        flash("Court name is required.", "error")
+        return _court_bookings_redirect(show_add=True)
+    if indoor_outdoor not in ("indoor", "outdoor"):
+        flash("Select indoor or outdoor.", "error")
+        return _court_bookings_redirect(show_add=True)
+
+    num_courts = None
+    if num_courts_raw:
+        try:
+            num_courts = int(num_courts_raw)
+            if num_courts < 1:
+                raise ValueError
+        except ValueError:
+            flash("Number of courts must be a positive whole number.", "error")
+            return _court_bookings_redirect(show_add=True)
+
+    if bookable:
+        if not booking_url:
+            flash("Please provide a booking link.", "error")
+            return _court_bookings_redirect(show_add=True)
+        if not _court_booking_url_valid(booking_url):
+            flash("Booking link must start with http:// or https://", "error")
+            return _court_bookings_redirect(show_add=True)
+    else:
+        booking_url = ""
+
+    courts = load_court_bookings()
+    courts.append({
+        "id": secrets.token_hex(8),
+        "name": name[:80],
+        "num_courts": num_courts,
+        "indoor_outdoor": indoor_outdoor,
+        "net_style": net_style[:60],
+        "bookable": bookable,
+        "booking_url": booking_url[:500],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    save_court_bookings(courts)
+    flash(f"Added {name}.", "success")
+    return _court_bookings_redirect()
 
 
 @app.route("/commish-tool")
@@ -3236,6 +3650,20 @@ def export_mens_league_standings():
         return jsonify({"weeks": load_mens_league_weeks()})
     except (json.JSONDecodeError, OSError):
         return jsonify({"weeks": []})
+
+
+@app.route("/export/pickleball_resale")
+def export_pickleball_resale():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify({"listings": load_resale_listings()})
+
+
+@app.route("/export/court_bookings")
+def export_court_bookings():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify({"courts": load_court_bookings()})
 
 
 def _schedule_e1(schedule_prob_team1):

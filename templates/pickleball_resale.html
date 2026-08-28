@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block title %}Pickleball Resale — Mitten Smash{% endblock %}
+{% block content %}
+  <header class="pr-header">
+    <h1>Pickleball Resale</h1>
+    <p class="pr-tagline">Buy, sell, and trade gear with the group — no password needed.</p>
+  </header>
+
+  <nav class="pr-tabs" aria-label="Pickleball Resale sections">
+    <a href="{{ url_for('pickleball_resale_page', tab='listings') }}#resale"
+       class="pr-tab {% if tab == 'listings' %}pr-tab-active{% endif %}">
+      Listings{% if listing_count %} ({{ listing_count }}){% endif %}
+    </a>
+    <a href="{{ url_for('pickleball_resale_page', tab='post') }}#resale"
+       class="pr-tab {% if tab == 'post' %}pr-tab-active{% endif %}">
+      Post an item
+    </a>
+  </nav>
+
+  <div id="resale" class="pr-panel">
+    {% if tab == 'listings' %}
+      {% if listings %}
+        <div class="pr-list">
+          {% for item in listings %}
+            <article id="listing-{{ item.id }}" class="pr-card">
+              <div class="pr-card-top">
+                {% if item.image_url %}
+                  <a href="{{ item.image_url }}" class="pr-image-link" target="_blank" rel="noopener">
+                    <img src="{{ item.image_url }}" alt="{{ item.title|e }}" class="pr-image">
+                  </a>
+                {% endif %}
+                <div class="pr-main">
+                  <h2 class="pr-title">{{ item.title }}</h2>
+                  <p class="pr-price">{{ item.price }}</p>
+                  <p class="pr-meta">
+                    <span class="pr-label">Listed by</span> {{ item.seller }}
+                    {% if item.created_display %}
+                      <span class="pr-date">· {{ item.created_display }}</span>
+                    {% endif %}
+                  </p>
+                </div>
+              </div>
+
+              {% if item.comments %}
+                <div class="pr-comments">
+                  <h3 class="pr-comments-title">Responses</h3>
+                  <ul class="pr-comment-list">
+                    {% for comment in item.comments %}
+                      <li class="pr-comment pr-comment-{{ comment.type }}">
+                        <strong>{{ comment.name }}</strong>
+                        <span class="pr-comment-detail">{{ comment.detail }}</span>
+                        {% if comment.created_display %}
+                          <span class="pr-comment-date">{{ comment.created_display }}</span>
+                        {% endif %}
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
+
+              <div class="pr-actions">
+                <button type="button" class="btn btn-secondary pr-respond-toggle"
+                        data-panel="respond-{{ item.id }}"
+                        aria-expanded="{% if active_listing_id == item.id %}true{% else %}false{% endif %}">
+                  Respond
+                </button>
+                <div id="respond-{{ item.id }}" class="pr-respond-panel"
+                     {% if active_listing_id != item.id %}hidden{% endif %}>
+                  <form method="post" action="{{ url_for('pickleball_resale_comment') }}" class="pr-comment-form">
+                    <input type="hidden" name="listing_id" value="{{ item.id }}">
+                    <label for="name-{{ item.id }}">Your name</label>
+                    <select id="name-{{ item.id }}" name="name" required>
+                      <option value="">Select…</option>
+                      {% for p in player_list %}
+                        <option value="{{ p|e }}">{{ p }}</option>
+                      {% endfor %}
+                    </select>
+                    <span class="pr-time-label">Response type</span>
+                    <label class="pr-radio">
+                      <input type="radio" name="comment_type" value="offer" checked class="pr-type-radio" data-listing="{{ item.id }}">
+                      Make an offer
+                    </label>
+                    <label class="pr-radio">
+                      <input type="radio" name="comment_type" value="interested" class="pr-type-radio" data-listing="{{ item.id }}">
+                      I'm interested
+                    </label>
+                    <label class="pr-radio">
+                      <input type="radio" name="comment_type" value="trade" class="pr-type-radio" data-listing="{{ item.id }}">
+                      Offer a trade
+                    </label>
+                    <label for="message-{{ item.id }}" class="pr-message-label" data-listing="{{ item.id }}">Your offer</label>
+                    <input type="text" id="message-{{ item.id }}" name="message" maxlength="300"
+                           placeholder="e.g. $50" class="pr-message-input" data-listing="{{ item.id }}">
+                    <button type="submit" class="btn" style="margin-top: 0.75rem;">Post response</button>
+                  </form>
+                </div>
+
+                <form method="post" action="{{ url_for('pickleball_resale_close') }}" class="pr-close-form"
+                      onsubmit="return confirm('Mark this listing as closed?');">
+                  <input type="hidden" name="listing_id" value="{{ item.id }}">
+                  <label for="seller-{{ item.id }}">Mark closed — enter seller name</label>
+                  <input type="text" id="seller-{{ item.id }}" name="seller_name" placeholder="e.g. {{ item.seller|e }}" required style="max-width: 16rem;">
+                  <button type="submit" class="btn btn-secondary pr-close-btn">Mark closed</button>
+                </form>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="pr-empty">No items listed right now.</p>
+        <p><a href="{{ url_for('pickleball_resale_page', tab='post') }}#resale" class="btn">Post an item</a></p>
+      {% endif %}
+
+    {% elif tab == 'post' %}
+      <h2 class="pr-section-title">Post an item</h2>
+      <p class="pr-section-sub">List gear for sale with a photo, price, and your name.</p>
+      <form method="post" action="{{ url_for('pickleball_resale_post') }}" enctype="multipart/form-data" class="pr-post-form">
+        <div class="pr-form-grid">
+          <div>
+            <label for="resale-seller">Your name</label>
+            <select id="resale-seller" name="seller" required>
+              <option value="">Select…</option>
+              {% for p in player_list %}
+                <option value="{{ p|e }}">{{ p }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label for="resale-title">Item title</label>
+            <input type="text" id="resale-title" name="title" placeholder="e.g. Selkirk Vanguard paddle" required maxlength="120">
+          </div>
+          <div>
+            <label for="resale-price">Price</label>
+            <input type="text" id="resale-price" name="price" placeholder="e.g. $80 or Best offer" required maxlength="40">
+          </div>
+          <div>
+            <label for="resale-image">Image</label>
+            <input type="file" id="resale-image" name="image" accept="image/jpeg,image/png,image/gif,image/webp" required>
+            <p class="pr-hint">JPG, PNG, GIF, or WebP — max 5 MB.</p>
+          </div>
+        </div>
+        <button type="submit">Post item</button>
+      </form>
+    {% endif %}
+  </div>
+{% endblock %}
+
+{% block head %}
+  <style>
+    .pr-header { margin-bottom: 1.25rem; }
+    .pr-header h1 { margin-bottom: 0.35rem; }
+    .pr-tagline { color: var(--muted); margin: 0; }
+    .pr-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-bottom: 1.25rem;
+      border-bottom: 2px solid var(--court-line);
+      padding-bottom: 0.5rem;
+      max-width: 52rem;
+    }
+    .pr-tab {
+      padding: 0.45rem 0.85rem;
+      border-radius: 6px 6px 0 0;
+      text-decoration: none;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .pr-tab:hover { color: var(--accent); text-decoration: none; }
+    .pr-tab-active {
+      background: var(--surface);
+      color: var(--accent);
+      border: 2px solid var(--court-line);
+      border-bottom-color: var(--surface);
+      margin-bottom: -2px;
+    }
+    .pr-panel { max-width: 52rem; }
+    .pr-section-title { margin: 0 0 0.35rem 0; font-size: 1.15rem; color: var(--accent); }
+    .pr-section-sub { margin: 0 0 1rem 0; color: var(--muted); font-size: 0.95rem; }
+    .pr-list { display: flex; flex-direction: column; gap: 1rem; }
+    .pr-card {
+      background: var(--surface);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+      padding: 1rem 1.15rem;
+    }
+    .pr-card-top {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+    .pr-image-link { flex-shrink: 0; }
+    .pr-image {
+      width: 8rem;
+      height: 8rem;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 2px solid var(--court-line);
+      display: block;
+    }
+    .pr-main { flex: 1 1 14rem; }
+    .pr-title { margin: 0 0 0.35rem 0; font-size: 1.15rem; color: var(--accent); }
+    .pr-price { margin: 0 0 0.5rem 0; font-size: 1.05rem; font-weight: 600; }
+    .pr-meta { margin: 0; font-size: 0.9rem; color: var(--muted); }
+    .pr-date { color: var(--muted); }
+    .pr-label {
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-right: 0.25rem;
+    }
+    .pr-comments {
+      margin-top: 1rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--court-line);
+    }
+    .pr-comments-title { margin: 0 0 0.5rem 0; font-size: 0.95rem; color: var(--accent); }
+    .pr-comment-list { list-style: none; margin: 0; padding: 0; }
+    .pr-comment {
+      margin: 0.35rem 0;
+      font-size: 0.9rem;
+      padding: 0.45rem 0.6rem;
+      background: var(--court);
+      border-radius: 6px;
+    }
+    .pr-comment-detail { margin-left: 0.35rem; }
+    .pr-comment-date { margin-left: 0.35rem; color: var(--muted); font-size: 0.8rem; }
+    .pr-actions {
+      margin-top: 1rem;
+      padding-top: 0.85rem;
+      border-top: 1px dashed var(--court-line);
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .pr-respond-panel {
+      margin-top: 0.5rem;
+      padding: 0.85rem;
+      background: var(--court);
+      border-radius: 8px;
+      border: 1px solid var(--court-line);
+    }
+    .pr-time-label { display: block; margin-top: 0.75rem; color: var(--muted); font-size: 0.9rem; }
+    .pr-radio { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.95rem; }
+    .pr-radio input { width: auto; margin: 0; }
+    .pr-message-input { max-width: 18rem; }
+    .pr-close-form {
+      margin-top: 0.25rem;
+      padding: 0.85rem;
+      background: var(--bg);
+      border: 1px solid var(--court-line);
+      border-radius: 8px;
+      max-width: 22rem;
+    }
+    .pr-close-btn { margin-top: 0.5rem; }
+    .pr-form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+      gap: 0 1rem;
+      margin-bottom: 0.5rem;
+    }
+    .pr-hint { color: var(--muted); font-size: 0.85rem; margin: 0.25rem 0 0 0; }
+    .pr-empty { color: var(--muted); font-size: 0.95rem; }
+    input[type="file"] {
+      max-width: 24rem;
+      padding: 0.35rem 0;
+      background: transparent;
+      border: none;
+    }
+    @media (max-width: 520px) {
+      .pr-card-top { flex-direction: column; }
+      .pr-image { width: 100%; height: auto; max-height: 14rem; }
+    }
+  </style>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('.pr-respond-toggle').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var panelId = btn.getAttribute('data-panel');
+          var panel = document.getElementById(panelId);
+          if (!panel) return;
+          var show = panel.hidden;
+          panel.hidden = !show;
+          btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+        });
+      });
+
+      function updateMessageField(listingId) {
+        var panel = document.getElementById('respond-' + listingId);
+        if (!panel) return;
+        var selected = panel.querySelector('.pr-type-radio:checked');
+        var label = panel.querySelector('.pr-message-label[data-listing="' + listingId + '"]');
+        var input = panel.querySelector('.pr-message-input[data-listing="' + listingId + '"]');
+        if (!selected || !label || !input) return;
+        var type = selected.value;
+        if (type === 'interested') {
+          label.textContent = 'Note (optional)';
+          input.removeAttribute('required');
+          input.placeholder = 'Optional message';
+        } else if (type === 'trade') {
+          label.textContent = 'Your trade offer';
+          input.setAttribute('required', 'required');
+          input.placeholder = 'e.g. Prolite paddle + $20';
+        } else {
+          label.textContent = 'Your offer';
+          input.setAttribute('required', 'required');
+          input.placeholder = 'e.g. $50';
+        }
+      }
+
+      document.querySelectorAll('.pr-type-radio').forEach(function(el) {
+        el.addEventListener('change', function() {
+          updateMessageField(el.getAttribute('data-listing'));
+        });
+      });
+      document.querySelectorAll('.pr-message-input').forEach(function(el) {
+        var listingId = el.getAttribute('data-listing');
+        if (listingId) updateMessageField(listingId);
+      });
+
+      {% if active_listing_id %}
+      var activeCard = document.getElementById('listing-{{ active_listing_id }}');
+      if (activeCard) activeCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      {% endif %}
+    });
+  </script>
+{% endblock %}

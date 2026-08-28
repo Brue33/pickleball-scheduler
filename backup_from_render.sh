@@ -48,5 +48,7 @@ backup_curl "drop_in_schedule" "drop_in_schedule.json"
 backup_curl "drop_in_requests" "drop_in_requests.json"
 backup_curl "drop_in_hub" "drop_in_hub.json"
 backup_curl "mens_league_standings" "mens_league_standings.json"
+backup_curl "pickleball_resale" "pickleball_resale.json"
+backup_curl "court_bookings" "court_bookings.json"
 
-echo "Backup complete. Files updated: player_bios.json, rankings.json, players.json, match_history.json, play_history.json, availability.json, published_schedule.json, drop_in_schedule.json, drop_in_requests.json, drop_in_hub.json, mens_league_standings.json"
+echo "Backup complete. Files updated: player_bios.json, rankings.json, players.json, match_history.json, play_history.json, availability.json, published_schedule.json, drop_in_schedule.json, drop_in_requests.json, drop_in_hub.json, mens_league_standings.json, pickleball_resale.json, court_bookings.json"

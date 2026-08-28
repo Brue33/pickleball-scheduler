@@ -1,62 +1,81 @@
 {% extends "base.html" %}
-{% block title %}Pickle U Leagues — Mitten Smash{% endblock %}
+{% block title %}{% if active_league %}{{ active_league.title }}{% else %}Pickle U Leagues{% endif %} — Mitten Smash{% endblock %}
 {% block content %}
-  <header class="pul-header">
-    <h1>Pickle U Leagues</h1>
-    <p class="pul-tagline">League play at Pickle U — standings and schedules by division.</p>
-  </header>
-
-  <nav class="pul-tabs" aria-label="Pickle U leagues">
-    {% for key, info in league_tabs.items() %}
-      <a href="{{ url_for('pickle_u_leagues', tab=key) }}#leagues"
-         class="pul-tab {% if tab == key %}pul-tab-active{% endif %}">
-        {{ info.label }}
-      </a>
-    {% endfor %}
-  </nav>
-
-  <div id="leagues" class="pul-panel">
-    <h2 class="pul-league-title">{{ active_league.title }}</h2>
+  {% if active_league %}
+    <p><a href="{{ url_for('pickle_u_leagues') }}">← Pickle U Leagues</a></p>
+    <header class="fg-header">
+      <h1>{{ active_league.title }}</h1>
+      <p class="fg-tagline">League play at Pickle U.</p>
+    </header>
     <p class="pul-placeholder">More info to come when the league is announced.</p>
-  </div>
+  {% else %}
+    <header class="fg-header">
+      <h1>Pickle U Leagues</h1>
+      <p class="fg-tagline">League play at Pickle U — standings and schedules by division.</p>
+    </header>
+
+    <div class="fg-grid">
+      {% for key, info in league_tabs.items() %}
+        <a href="{{ url_for('pickle_u_leagues', tab=key) }}" class="fg-card">
+          <span class="fg-card-icon" aria-hidden="true">{{ info.icon }}</span>
+          <h2 class="fg-card-title">{{ info.label }}</h2>
+          <p class="fg-card-desc">{{ info.desc }}</p>
+          <p class="fg-card-meta fg-meta-muted">{{ info.meta }}</p>
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block head %}
   <style>
-    .pul-header { margin-bottom: 1.25rem; }
-    .pul-header h1 { margin-bottom: 0.35rem; }
-    .pul-tagline { color: var(--muted); margin: 0; }
-    .pul-tabs {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.35rem;
-      margin-bottom: 1.25rem;
-      border-bottom: 2px solid var(--court-line);
-      padding-bottom: 0.5rem;
+    .fg-header { margin-bottom: 1.75rem; }
+    .fg-header h1 { font-size: 1.75rem; margin-bottom: 0.35rem; }
+    .fg-tagline { color: var(--muted); margin: 0; font-size: 1rem; }
+    .fg-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+      gap: 1rem;
       max-width: 52rem;
     }
-    .pul-tab {
-      padding: 0.45rem 0.85rem;
-      border-radius: 6px 6px 0 0;
-      text-decoration: none;
-      color: var(--muted);
-      font-weight: 600;
-      font-size: 0.95rem;
-    }
-    .pul-tab:hover { color: var(--accent); text-decoration: none; }
-    .pul-tab-active {
+    .fg-card {
+      display: block;
       background: var(--surface);
-      color: var(--accent);
       border: 2px solid var(--court-line);
-      border-bottom-color: var(--surface);
-      margin-bottom: -2px;
+      border-radius: 10px;
+      padding: 1.15rem 1.25rem;
+      text-decoration: none;
+      color: var(--text);
+      transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
     }
-    .pul-panel { max-width: 52rem; }
-    .pul-league-title {
-      margin: 0 0 0.75rem 0;
-      font-size: 1.15rem;
+    .fg-card:hover {
+      text-decoration: none;
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    }
+    .fg-card-icon {
+      font-size: 0.85rem;
+      font-weight: 700;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 8px;
+      background: var(--court);
+      border: 2px solid var(--court-line);
       color: var(--accent);
+      margin-bottom: 0.65rem;
     }
-    .pul-placeholder { color: var(--muted); margin: 0; }
+    .fg-card-title { margin: 0 0 0.4rem 0; font-size: 1.15rem; color: var(--accent); }
+    .fg-card-desc { margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--muted); line-height: 1.45; }
+    .fg-card-meta { margin: 0; font-size: 0.85rem; color: var(--text); }
+    .fg-meta-muted { color: var(--muted); }
+    .pul-placeholder { color: var(--muted); margin: 0; max-width: 52rem; }
+    @media (max-width: 480px) {
+      .fg-grid { grid-template-columns: 1fr; }
+    }
   </style>
 {% endblock %}
