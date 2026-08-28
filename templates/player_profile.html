@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}{{ player }} — Player Profile{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('player_profiles_page') }}">← Player Profiles</a></p>
+
+  <header class="pp-view-header">
+    <span class="pp-avatar" aria-hidden="true">{{ player[0]|upper }}</span>
+    <h1>{{ player }}</h1>
+  </header>
+
+  {% if not show_edit %}
+    <div class="pp-bio-panel">
+      {% if bio %}
+        <p class="pp-bio-text">{{ bio }}</p>
+      {% else %}
+        <p class="pp-bio-empty">No bio yet.</p>
+      {% endif %}
+    </div>
+    <button type="button" class="btn btn-secondary" id="pp-edit-toggle" aria-expanded="false" aria-controls="pp-edit-panel">
+      Edit profile
+    </button>
+    <div id="pp-edit-panel" class="pp-edit-panel" hidden>
+      <form method="post" action="{{ url_for('player_profile_page', player=player) }}">
+        <input type="hidden" name="player" value="{{ player|e }}">
+        <label for="confirm-name">Your name (to edit this profile)</label>
+        <input type="text" id="confirm-name" name="confirm_name" placeholder="e.g. {{ player|e }}" required style="max-width: 16rem;">
+        <label for="bio">Bio</label>
+        <textarea id="bio" name="bio" rows="6" placeholder="Years playing, handedness, paddle, location, etc." style="max-width: 32rem;">{{ bio|e }}</textarea>
+        <button type="submit">Save profile</button>
+      </form>
+    </div>
+  {% else %}
+    <div class="pp-edit-panel">
+      <form method="post" action="{{ url_for('player_profile_page', player=player) }}">
+        <input type="hidden" name="player" value="{{ player|e }}">
+        <label for="confirm-name">Your name (to edit this profile)</label>
+        <input type="text" id="confirm-name" name="confirm_name" placeholder="e.g. {{ player|e }}" required style="max-width: 16rem;">
+        <label for="bio">Bio</label>
+        <textarea id="bio" name="bio" rows="6" placeholder="Years playing, handedness, paddle, location, etc." style="max-width: 32rem;">{{ bio|e }}</textarea>
+        <button type="submit">Save profile</button>
+        <a href="{{ url_for('player_profile_page', player=player) }}" class="btn btn-secondary" style="margin-left: 0.5rem;">Cancel</a>
+      </form>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block head %}
+  <style>
+    .pp-view-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .pp-view-header h1 { margin: 0; font-size: 1.75rem; }
+    .pp-avatar {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 3rem;
+      height: 3rem;
+      border-radius: 10px;
+      background: var(--court);
+      border: 2px solid var(--court-line);
+      color: var(--accent);
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+    .pp-bio-panel {
+      background: var(--surface);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+      padding: 1rem 1.15rem;
+      max-width: 36rem;
+      margin-bottom: 1rem;
+    }
+    .pp-bio-text {
+      margin: 0;
+      white-space: pre-wrap;
+      line-height: 1.55;
+    }
+    .pp-bio-empty { margin: 0; color: var(--muted); font-style: italic; }
+    .pp-edit-panel {
+      margin-top: 1rem;
+      padding: 1rem 1.15rem;
+      background: var(--court);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+      max-width: 36rem;
+    }
+  </style>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var toggle = document.getElementById('pp-edit-toggle');
+      var panel = document.getElementById('pp-edit-panel');
+      if (toggle && panel) {
+        toggle.addEventListener('click', function() {
+          var open = panel.hidden;
+          panel.hidden = !open;
+          toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          toggle.textContent = open ? 'Hide edit form' : 'Edit profile';
+          if (open) {
+            var nameInput = document.getElementById('confirm-name');
+            if (nameInput) nameInput.focus();
+          }
+        });
+      }
+    });
+  </script>
+{% endblock %}

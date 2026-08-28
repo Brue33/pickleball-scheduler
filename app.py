@@ -187,6 +187,41 @@ def save_player_bios(bios):
         json.dump(bios, f, indent=2)
 
 
+def all_site_players():
+    """Everyone on the site: roster, rankings, and anyone with a saved bio."""
+    players = list(load_players_list())
+    seen = {p.lower() for p in players}
+    for name in load_rankings():
+        if name.lower() not in seen:
+            players.append(name)
+            seen.add(name.lower())
+    for name in load_player_bios():
+        if name.lower() not in seen:
+            players.append(name)
+            seen.add(name.lower())
+    return sorted(players, key=str.lower)
+
+
+def resolve_site_player(name):
+    """Match a player name case-insensitively to the canonical roster name."""
+    query = (name or "").strip()
+    if not query:
+        return None
+    for player in all_site_players():
+        if player.lower() == query.lower():
+            return player
+    return None
+
+
+def _bio_preview(bio, max_len=90):
+    text = " ".join((bio or "").split())
+    if not text:
+        return "No bio yet"
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1].rstrip() + "…"
+
+
 def load_match_history():
     """Load past match results (newest first)."""
     if not MATCH_HISTORY_FILE.exists():
@@ -1797,6 +1832,60 @@ def friends_group():
         top_ranked=top_ranked,
         drop_in_has_schedule=drop_in_has_schedule,
         drop_in_request_count=len(active_drop_in_requests()) + len(active_drop_in_open_listings()),
+        profile_count=len(all_site_players()),
+    )
+
+
+@app.route("/friends-group/player-profiles")
+def player_profiles_page():
+    """Hub of player profile cards for everyone on the site."""
+    bios = load_player_bios()
+    profiles = []
+    for name in all_site_players():
+        bio = (bios.get(name) or "").strip()
+        profiles.append({
+            "name": name,
+            "icon": name[0].upper() if name else "?",
+            "bio_preview": _bio_preview(bio),
+            "has_bio": bool(bio),
+        })
+    return render_template("player_profiles.html", profiles=profiles)
+
+
+@app.route("/friends-group/player-profile", methods=["GET", "POST"])
+def player_profile_page():
+    """View or edit a single player profile (name required to save)."""
+    player = resolve_site_player(
+        request.args.get("player", "") or request.form.get("player", "")
+    )
+    if not player:
+        flash("Player not found.", "error")
+        return redirect(url_for("player_profiles_page"))
+
+    bios = load_player_bios()
+    show_edit = (request.args.get("edit") or "").strip() == "1"
+
+    if request.method == "POST":
+        confirmed = request.form.get("confirm_name", "").strip()
+        if confirmed.lower() != player.lower():
+            flash("Enter your name exactly to edit this profile.", "error")
+            show_edit = True
+        else:
+            new_bio = request.form.get("bio", "").strip()
+            if new_bio:
+                bios[player] = new_bio
+            elif player in bios:
+                del bios[player]
+            save_player_bios(bios)
+            flash("Profile updated.", "success")
+            return redirect(url_for("player_profile_page", player=player))
+
+    bio = bios.get(player, "")
+    return render_template(
+        "player_profile.html",
+        player=player,
+        bio=bio,
+        show_edit=show_edit,
     )
 
 
@@ -2940,16 +3029,17 @@ def commish_tool():
 
 @app.route("/")
 def index():
-    rankings = load_rankings()
     next_thu = get_next_thursday()
     next_game_date_display = format_game_day_display(next_thu)
     published = load_published_schedule()
-    next_game_location_time = ((published or {}).get("time_location") or "").strip() or "Green Lake, 6pm"
+    next_game_location_time = ((published or {}).get("time_location") or "").strip() or "YMCA 5:30pm"
     return render_template(
         "index.html",
-        rankings=rankings,
         next_game_date_display=next_game_date_display,
         next_game_location_time=next_game_location_time,
+        player_count=len(load_players_list()),
+        resale_count=len(active_resale_listings()),
+        court_count=len(load_court_bookings()),
     )
 
 

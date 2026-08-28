@@ -1,15 +1,250 @@
 {% extends "base.html" %}
 {% block title %}Mitten Smash Pickleball — Home{% endblock %}
 {% block content %}
-  <h1>Mitten Smash Pickleball</h1>
-  <p>Welcome to Mitten Smash, a friendly pickleball league. We officially play one day a week in doubles, rotating partners and opponents as much as possible. Rankings are calculated per person, but every point matters!</p>
-  <p>On Slack you can reach out to coordinate more games with others.</p>
-  <p><strong>Next game:</strong> {{ next_game_location_time }}, {{ next_game_date_display }}</p>
-  <p><a href="{{ url_for('friends_group') }}" class="btn" style="margin-top: 0.5rem;">Go to Mitten Smash</a> — schedule, availability, rankings, and past games.</p>
-  <p><a href="{{ url_for('commish_tool') }}" class="btn btn-secondary" style="margin-top: 0.5rem;">Commish Tool</a> — generate schedules and manage players (password required).</p>
-  <form method="post" action="{{ url_for('reset_history') }}" style="margin-top: 1.5rem;" onsubmit="return confirm('Reset partner/opponent history? Rankings will not change.');">
-    <label for="reset_history_password">Password (required to reset)</label>
-    <input type="password" id="reset_history_password" name="reset_history_password" placeholder="Password" style="max-width: 14rem; margin-right: 0.5rem;">
-    <button type="submit" class="btn btn-secondary" style="margin-top: 0.25rem;">Reset partner history (new season)</button>
-  </form>
+  <div class="home-wrap">
+    <header class="home-hero">
+      <p class="home-eyebrow">Pickleball in Michigan</p>
+      <h1>Mitten Smash Pickleball</h1>
+      <p class="home-lead">
+        A friendly league for Thursday doubles — rotating partners and opponents, rankings per person, and every point on the board.
+      </p>
+      <div class="home-next-game">
+        <span class="home-next-label">Next game</span>
+        <strong>{{ next_game_location_time }}</strong>
+        <span class="home-next-date">{{ next_game_date_display }}</span>
+      </div>
+    </header>
+
+    <section class="home-intro" aria-label="About">
+      <p>Coordinate extra games on Slack, check availability before Thursday, and track how you stack up week to week.</p>
+    </section>
+
+    <h2 class="home-section-title">Where to go</h2>
+    <div class="home-nav-grid">
+      <div class="home-nav-card home-nav-card--current" aria-current="page">
+        <span class="home-nav-icon" aria-hidden="true">H</span>
+        <h3 class="home-nav-title">Home</h3>
+        <p class="home-nav-desc">You are here — league hub and quick links.</p>
+      </div>
+
+      <a href="{{ url_for('friends_group') }}" class="home-nav-card">
+        <span class="home-nav-icon" aria-hidden="true">MS</span>
+        <h3 class="home-nav-title">Mitten Smash</h3>
+        <p class="home-nav-desc">Schedule, availability, rankings, drop-in, and profiles.</p>
+        <p class="home-nav-meta">{{ player_count }} player{{ 's' if player_count != 1 else '' }}</p>
+      </a>
+
+      <a href="{{ url_for('pickle_u_leagues') }}" class="home-nav-card">
+        <span class="home-nav-icon" aria-hidden="true">PU</span>
+        <h3 class="home-nav-title">Pickle U Leagues</h3>
+        <p class="home-nav-desc">Men's, coed, and women's league play at Pickle U.</p>
+        <p class="home-nav-meta home-nav-meta--muted">3 divisions</p>
+      </a>
+
+      <a href="{{ url_for('pickleball_resale_page') }}" class="home-nav-card">
+        <span class="home-nav-icon" aria-hidden="true">$</span>
+        <h3 class="home-nav-title">Pickleball Resale</h3>
+        <p class="home-nav-desc">Buy, sell, trade, or make an offer on gear.</p>
+        <p class="home-nav-meta {% if resale_count %}home-nav-meta--ok{% else %}home-nav-meta--muted{% endif %}">
+          {% if resale_count %}{{ resale_count }} open listing{{ 's' if resale_count != 1 else '' }}{% else %}No open listings{% endif %}
+        </p>
+      </a>
+
+      <a href="{{ url_for('court_bookings_page') }}" class="home-nav-card">
+        <span class="home-nav-icon" aria-hidden="true">LC</span>
+        <h3 class="home-nav-title">Local Courts</h3>
+        <p class="home-nav-desc">Courts nearby — book links, addresses, and details.</p>
+        <p class="home-nav-meta home-nav-meta--muted">{{ court_count }} court{{ 's' if court_count != 1 else '' }} listed</p>
+      </a>
+
+      <a href="{{ url_for('commish_tool') }}" class="home-nav-card home-nav-card--admin">
+        <span class="home-nav-icon" aria-hidden="true">C</span>
+        <h3 class="home-nav-title">Commish Tool</h3>
+        <p class="home-nav-desc">Generate schedules and manage players.</p>
+        <p class="home-nav-meta home-nav-meta--muted">Password required</p>
+      </a>
+    </div>
+
+    <details class="home-admin">
+      <summary>Admin: reset partner history</summary>
+      <p class="home-admin-note">Clears partner/opponent history for a new season. Rankings are not changed.</p>
+      <form method="post" action="{{ url_for('reset_history') }}" onsubmit="return confirm('Reset partner/opponent history? Rankings will not change.');">
+        <label for="reset_history_password">Password</label>
+        <div class="home-admin-row">
+          <input type="password" id="reset_history_password" name="reset_history_password" placeholder="Password" autocomplete="current-password">
+          <button type="submit" class="btn btn-secondary">Reset history</button>
+        </div>
+      </form>
+    </details>
+  </div>
+{% endblock %}
+
+{% block head %}
+  <style>
+    .home-wrap { max-width: 52rem; }
+    .home-hero {
+      margin-bottom: 1.75rem;
+      padding: 1.75rem 1.5rem 1.5rem;
+      background: linear-gradient(145deg, var(--court) 0%, var(--surface) 55%, var(--bg) 100%);
+      border: 2px solid var(--court-line);
+      border-radius: 14px;
+      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22);
+    }
+    .home-eyebrow {
+      margin: 0 0 0.35rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .home-hero h1 {
+      margin: 0 0 0.65rem;
+      font-size: clamp(1.65rem, 4vw, 2.15rem);
+      line-height: 1.15;
+      color: var(--text);
+    }
+    .home-lead {
+      margin: 0 0 1.25rem;
+      max-width: 38rem;
+      font-size: 1.02rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .home-next-game {
+      display: inline-block;
+      background: rgba(13, 31, 13, 0.45);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+      padding: 0.85rem 1.15rem;
+      line-height: 1.4;
+    }
+    .home-next-label {
+      display: block;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.2rem;
+    }
+    .home-next-game strong { color: var(--accent); font-size: 1.08rem; }
+    .home-next-date { display: block; color: var(--text); font-size: 0.95rem; margin-top: 0.15rem; }
+    .home-intro {
+      margin-bottom: 1.75rem;
+      padding: 1rem 1.15rem;
+      background: var(--surface);
+      border-left: 4px solid var(--accent);
+      border-radius: 0 8px 8px 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.5;
+    }
+    .home-intro p { margin: 0; }
+    .home-section-title {
+      margin: 0 0 1rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .home-nav-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .home-nav-card {
+      display: block;
+      background: var(--surface);
+      border: 2px solid var(--court-line);
+      border-radius: 12px;
+      padding: 1.15rem 1.25rem;
+      text-decoration: none;
+      color: var(--text);
+      transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+    }
+    a.home-nav-card:hover {
+      text-decoration: none;
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+    }
+    .home-nav-card--current {
+      border-color: var(--accent);
+      background: linear-gradient(160deg, var(--surface) 0%, rgba(30, 70, 32, 0.55) 100%);
+      cursor: default;
+    }
+    .home-nav-card--admin .home-nav-icon {
+      background: rgba(229, 115, 115, 0.12);
+      border-color: rgba(229, 115, 115, 0.35);
+      color: #f5b4b4;
+    }
+    .home-nav-icon {
+      font-size: 0.78rem;
+      font-weight: 700;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 2.15rem;
+      height: 2.15rem;
+      padding: 0 0.35rem;
+      border-radius: 8px;
+      background: var(--court);
+      border: 2px solid var(--court-line);
+      color: var(--accent);
+      margin-bottom: 0.7rem;
+    }
+    .home-nav-title {
+      margin: 0 0 0.4rem;
+      font-size: 1.12rem;
+      color: var(--accent);
+    }
+    .home-nav-card--current .home-nav-title { color: var(--text); }
+    .home-nav-desc {
+      margin: 0 0 0.75rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .home-nav-meta {
+      margin: 0;
+      font-size: 0.85rem;
+      color: var(--text);
+    }
+    .home-nav-meta--ok { color: var(--success); font-weight: 600; }
+    .home-nav-meta--muted { color: var(--muted); }
+    .home-admin {
+      padding: 1rem 1.15rem;
+      background: var(--surface);
+      border: 2px dashed var(--court-line);
+      border-radius: 10px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .home-admin summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .home-admin-note { margin: 0.75rem 0 0.85rem; line-height: 1.45; }
+    .home-admin label { margin-top: 0; }
+    .home-admin-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      align-items: flex-end;
+    }
+    .home-admin-row input {
+      flex: 1 1 12rem;
+      max-width: 16rem;
+      margin-top: 0;
+    }
+    .home-admin-row .btn { margin-top: 0; }
+    @media (max-width: 480px) {
+      .home-nav-grid { grid-template-columns: 1fr; }
+      .home-hero { padding: 1.35rem 1.1rem; }
+    }
+  </style>
 {% endblock %}

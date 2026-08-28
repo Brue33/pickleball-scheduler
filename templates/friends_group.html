@@ -54,6 +54,13 @@
         {% if drop_in_has_schedule %}Schedule live{% elif drop_in_request_count %}{{ drop_in_request_count }} open request{{ 's' if drop_in_request_count != 1 else '' }}{% else %}No active schedule{% endif %}
       </p>
     </a>
+
+    <a href="{{ url_for('player_profiles_page') }}" class="fg-card">
+      <span class="fg-card-icon" aria-hidden="true">Pf</span>
+      <h2 class="fg-card-title">Player Profiles</h2>
+      <p class="fg-card-desc">Bios and info for everyone in the group.</p>
+      <p class="fg-card-meta fg-meta-muted">{{ profile_count }} player{{ 's' if profile_count != 1 else '' }}</p>
+    </a>
   </div>
 {% endblock %}
 
