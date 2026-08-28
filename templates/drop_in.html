@@ -8,7 +8,7 @@
   </header>
 
   <nav class="di-tabs" aria-label="Drop-in sections">
-    <a href="{{ url_for('drop_in_page', tab='requests') }}#drop-ins" class="di-tab {% if tab == 'requests' %}di-tab-active{% endif %}">Requests{% if drop_in_requests %} ({{ drop_in_requests|length }}){% endif %}</a>
+    <a href="{{ url_for('drop_in_page', tab='requests') }}#drop-ins" class="di-tab {% if tab == 'requests' %}di-tab-active{% endif %}">Requests{% if drop_in_requests or drop_in_open_listings %} ({{ drop_in_requests|length + drop_in_open_listings|length }}){% endif %}</a>
     <a href="{{ url_for('drop_in_page', tab='schedule') }}#drop-ins" class="di-tab {% if tab == 'schedule' %}di-tab-active{% endif %}">Schedule{% if schedule_list %} ({{ schedule_list|length }}){% endif %}</a>
   </nav>
 
@@ -19,7 +19,10 @@
           <h2 class="di-section-title">Drop-in requests</h2>
           <p class="di-section-sub">Post a request, have others accept, then generate a schedule right in the same box.</p>
         </div>
-        <button type="button" class="btn" id="dropin-toggle" aria-expanded="false" aria-controls="dropin-form-panel">Request a drop-in</button>
+        <div class="di-action-btns">
+          <button type="button" class="btn" id="dropin-toggle" aria-expanded="false" aria-controls="dropin-form-panel">Request a drop-in</button>
+          <button type="button" class="btn btn-secondary" id="open-toggle" aria-expanded="false" aria-controls="open-form-panel">Open to drop-in</button>
+        </div>
       </div>
 
       <div id="dropin-form-panel" class="di-form-panel" hidden>
@@ -59,7 +62,97 @@
         </form>
       </div>
 
+      <div id="open-form-panel" class="di-form-panel" hidden>
+        <form method="post" action="{{ url_for('drop_in_open_post') }}">
+          <div class="di-form-grid">
+            <div>
+              <label for="open-player">Your name</label>
+              <select id="open-player" name="player" required>
+                <option value="">Select…</option>
+                {% for p in player_list %}
+                  <option value="{{ p|e }}">{{ p }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="open-court">Court / location</label>
+              <input type="text" id="open-court" name="court" placeholder="e.g. Court 2 or Green Lake" required maxlength="80">
+            </div>
+            <div class="di-open-days-block">
+              <span class="di-time-label">Days you want to play</span>
+              <div class="di-open-days-grid">
+                {% for day in open_drop_in_days %}
+                  <label class="di-open-day-check">
+                    <input type="checkbox" name="open_days" value="{{ day }}">
+                    {{ day[:3] }}
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+            <div>
+              <label for="open-time-slot">Time</label>
+              <select id="open-time-slot" name="time_slot" required style="max-width: 14rem;">
+                {% for key, label in open_time_slots.items() %}
+                  <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <button type="submit">Post open to drop-in</button>
+        </form>
+      </div>
+
+      {% if drop_in_open_listings %}
+        <h3 class="di-list-heading">Open to drop-in</h3>
+        <p class="di-section-sub" style="margin-top: 0;">Players looking for games — convert to a full request when you're ready to set a date.</p>
+        <div class="di-open-list">
+          {% for open in drop_in_open_listings %}
+            <article id="open-{{ open.id }}" class="di-open-card">
+              <div class="di-open-main">
+                <p class="di-request-who"><strong>{{ open.player }}</strong> is open to drop-in</p>
+                <p class="di-request-detail"><span class="di-label">Court</span> {{ open.court }}</p>
+                <p class="di-request-detail"><span class="di-label">Days</span> {{ open.days_display }}</p>
+                <p class="di-request-detail"><span class="di-label">Time</span> {{ open.time_slot_display }}</p>
+              </div>
+              <div class="di-open-actions">
+                <button type="button" class="btn btn-secondary di-convert-toggle" data-panel="convert-{{ open.id }}" aria-expanded="{% if active_open_id == open.id %}true{% else %}false{% endif %}">
+                  Convert to full request
+                </button>
+                <div id="convert-{{ open.id }}" class="di-convert-panel" {% if active_open_id != open.id %}hidden{% endif %}>
+                  <form method="post" action="{{ url_for('drop_in_open_convert') }}">
+                    <input type="hidden" name="open_id" value="{{ open.id }}">
+                    <input type="hidden" name="requester" value="{{ open.player|e }}">
+                    <input type="hidden" name="court" value="{{ open.court|e }}">
+                    <label for="convert-date-{{ open.id }}">Pick a date (on one of your days)</label>
+                    <input type="date" id="convert-date-{{ open.id }}" name="play_date" min="{{ drop_in_min_date }}" required>
+                    <div class="di-time-block">
+                      <span class="di-time-label">Time for this game</span>
+                      <label class="di-radio">
+                        <input type="radio" name="time_mode" value="specific" {% if open.time_mode_default == 'specific' %}checked{% endif %} class="convert-time-mode" data-open="{{ open.id }}">
+                        Specific time
+                      </label>
+                      <input type="text" id="convert-time-{{ open.id }}" name="time" value="{{ open.time_default|e }}" placeholder="e.g. 6pm" maxlength="40" class="di-time-input convert-time-input" data-open="{{ open.id }}">
+                      <label class="di-radio">
+                        <input type="radio" name="time_mode" value="flexible" {% if open.time_mode_default == 'flexible' %}checked{% endif %} class="convert-time-mode" data-open="{{ open.id }}">
+                        Any time that day
+                      </label>
+                    </div>
+                    <button type="submit" class="btn" style="margin-top: 0.5rem;">Post full request</button>
+                  </form>
+                </div>
+                <form method="post" action="{{ url_for('drop_in_open_cancel') }}" class="di-open-cancel-form" onsubmit="return confirm('Remove this open listing?');">
+                  <input type="hidden" name="open_id" value="{{ open.id }}">
+                  <input type="hidden" name="player" value="{{ open.player|e }}">
+                  <button type="submit" class="btn btn-secondary di-cancel-btn">Remove ({{ open.player }})</button>
+                </form>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+
       {% if drop_in_requests %}
+        <h3 class="di-list-heading">Drop-in requests</h3>
         <div class="di-request-list">
           {% for req in drop_in_requests %}
             <article id="req-{{ req.id }}" class="di-request-card">
@@ -182,7 +275,9 @@
           {% endfor %}
         </div>
       {% else %}
+        {% if not drop_in_open_listings %}
         <p class="di-empty">No open drop-in requests right now.</p>
+        {% endif %}
       {% endif %}
 
     {% elif tab == 'schedule' %}
@@ -266,6 +361,38 @@
     .di-section-sub { margin: 0 0 1rem 0; color: var(--muted); font-size: 0.95rem; }
     .di-subtitle { margin: 0.75rem 0 0.35rem 0; font-size: 1rem; color: var(--accent); }
     .di-section-header .btn { margin-top: 0; }
+    .di-action-btns { display: flex; flex-wrap: wrap; gap: 0.5rem; flex-shrink: 0; }
+    .di-list-heading { margin: 1.5rem 0 0.5rem 0; font-size: 1.05rem; color: var(--accent); }
+    .di-open-list { display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 0.5rem; }
+    .di-open-card {
+      background: var(--surface);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+      padding: 1rem 1.15rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .di-open-main { flex: 1 1 14rem; }
+    .di-open-actions { min-width: 12rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    .di-convert-panel { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed var(--court-line); }
+    .di-open-days-block { grid-column: 1 / -1; }
+    .di-open-days-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.75rem;
+      margin-top: 0.35rem;
+    }
+    .di-open-day-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.9rem;
+      color: var(--text);
+    }
+    .di-open-day-check input { width: auto; margin: 0; }
     .di-form-panel {
       background: var(--court);
       border: 2px solid var(--court-line);
@@ -400,6 +527,51 @@
       modeInputs.forEach(function(el) { el.addEventListener('change', updateTimeInput); });
       updateTimeInput();
 
+      var openToggle = document.getElementById('open-toggle');
+      var openPanel = document.getElementById('open-form-panel');
+      if (openToggle && openPanel) {
+        openToggle.addEventListener('click', function() {
+          var open = openPanel.hidden;
+          openPanel.hidden = !open;
+          openToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          openToggle.textContent = open ? 'Hide form' : 'Open to drop-in';
+        });
+      }
+
+      document.querySelectorAll('.di-convert-toggle').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var panelId = btn.getAttribute('data-panel');
+          var panel = document.getElementById(panelId);
+          if (!panel) return;
+          var show = panel.hidden;
+          panel.hidden = !show;
+          btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+        });
+      });
+
+      function updateConvertTimeInput(openId) {
+        var panel = document.getElementById('convert-' + openId);
+        if (!panel) return;
+        var flexible = panel.querySelector('.convert-time-mode[value="flexible"]:checked');
+        var timeInput = panel.querySelector('.convert-time-input[data-open="' + openId + '"]');
+        if (!timeInput) return;
+        var disabled = !!flexible;
+        timeInput.disabled = disabled;
+        timeInput.classList.toggle('is-disabled', disabled);
+        if (disabled) timeInput.removeAttribute('required');
+        else timeInput.setAttribute('required', 'required');
+      }
+      document.querySelectorAll('.convert-time-mode').forEach(function(el) {
+        el.addEventListener('change', function() {
+          var openId = el.getAttribute('data-open');
+          if (openId) updateConvertTimeInput(openId);
+        });
+      });
+      document.querySelectorAll('.convert-time-input').forEach(function(el) {
+        var openId = el.getAttribute('data-open');
+        if (openId) updateConvertTimeInput(openId);
+      });
+
       document.querySelectorAll('.di-generate-toggle').forEach(function(btn) {
         btn.addEventListener('click', function() {
           var panelId = btn.getAttribute('data-panel');
@@ -425,6 +597,10 @@
       {% if active_request_id %}
       var activeCard = document.getElementById('req-{{ active_request_id }}');
       if (activeCard) activeCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      {% endif %}
+      {% if active_open_id %}
+      var activeOpen = document.getElementById('open-{{ active_open_id }}');
+      if (activeOpen) activeOpen.scrollIntoView({ behavior: 'smooth', block: 'start' });
       {% endif %}
     });
   </script>

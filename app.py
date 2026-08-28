@@ -53,6 +53,16 @@ PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
 DROP_IN_SCHEDULE_DAYS = 14
 
+OPEN_DROP_IN_DAYS = [
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+]
+OPEN_DROP_IN_TIME_SLOTS = {
+    "morning": "Morning",
+    "midday": "Mid day",
+    "evening": "Evening",
+    "any": "Any time",
+}
+
 SKILL_LEVEL_OPTIONS = [
     ("below_2", "Below 2.0", 1000),
     ("2.0", "2.0", 1200),
@@ -948,12 +958,14 @@ def _drop_in_requests_today():
 
 
 def active_drop_in_requests():
-    """Open requests for today or later without a posted schedule, sorted by play date."""
+    """Open full requests for today or later without a posted schedule, sorted by play date."""
     today = _drop_in_requests_today()
     hub = purge_expired_drop_in_schedules()
     published_ids = set(hub.get("schedules", {}).keys())
     active = []
     for req in load_drop_in_requests():
+        if req.get("type") == "open":
+            continue
         if req.get("status") != "open":
             continue
         if req.get("id") in published_ids:
@@ -967,6 +979,51 @@ def active_drop_in_requests():
         active.append(req)
     active.sort(key=lambda r: (r.get("play_date", ""), r.get("created_at", "")))
     return active
+
+
+def active_drop_in_open_listings():
+    """Players open to drop-in (availability-style listings)."""
+    active = []
+    for item in load_drop_in_requests():
+        if item.get("type") != "open":
+            continue
+        if item.get("status") != "open":
+            continue
+        active.append(item)
+    active.sort(key=lambda r: (r.get("player", "").lower(), r.get("created_at", "")))
+    return active
+
+
+def format_drop_in_open_display(item):
+    days = [d for d in (item.get("days") or []) if d in OPEN_DROP_IN_DAYS]
+    slot_key = item.get("time_slot", "any")
+    if slot_key not in OPEN_DROP_IN_TIME_SLOTS:
+        slot_key = "any"
+    player = (item.get("player") or "").strip()
+    time_mode_default, time_default = _drop_in_open_time_defaults(slot_key)
+    return {
+        **item,
+        "player": player,
+        "days": days,
+        "days_display": ", ".join(days) if days else "—",
+        "time_slot": slot_key,
+        "time_slot_display": OPEN_DROP_IN_TIME_SLOTS[slot_key],
+        "time_mode_default": time_mode_default,
+        "time_default": time_default,
+    }
+
+
+def _drop_in_open_time_defaults(time_slot):
+    """Suggest time_mode/time when converting open listing to full request."""
+    if time_slot == "any":
+        return "flexible", ""
+    if time_slot == "morning":
+        return "specific", "Morning"
+    if time_slot == "midday":
+        return "specific", "Mid day"
+    if time_slot == "evening":
+        return "specific", "Evening"
+    return "flexible", ""
 
 
 def drop_in_request_roster(req):
@@ -1623,7 +1680,7 @@ def friends_group():
         match_count=len(matches),
         top_ranked=top_ranked,
         drop_in_has_schedule=drop_in_has_schedule,
-        drop_in_request_count=len(active_drop_in_requests()),
+        drop_in_request_count=len(active_drop_in_requests()) + len(active_drop_in_open_listings()),
     )
 
 
@@ -1637,10 +1694,14 @@ def drop_in_page():
     drop_in_requests = [
         format_drop_in_request_display(r, hub) for r in active_drop_in_requests()
     ]
+    drop_in_open_listings = [
+        format_drop_in_open_display(o) for o in active_drop_in_open_listings()
+    ]
     tab = (request.args.get("tab") or "requests").strip().lower()
     if tab not in ("requests", "schedule"):
         tab = "requests"
     active_request_id = (request.args.get("request") or "").strip()
+    active_open_id = (request.args.get("open") or "").strip()
     selected_schedule_id = (request.args.get("schedule") or "").strip()
     if tab == "schedule" and not selected_schedule_id and len(schedule_list) == 1:
         selected_schedule_id = schedule_list[0]["request_id"]
@@ -1654,6 +1715,9 @@ def drop_in_page():
         player_list=player_list,
         guests=guests,
         drop_in_requests=drop_in_requests,
+        drop_in_open_listings=drop_in_open_listings,
+        open_drop_in_days=OPEN_DROP_IN_DAYS,
+        open_time_slots=OPEN_DROP_IN_TIME_SLOTS,
         drop_in_min_date=_drop_in_requests_today().isoformat(),
         schedule_list=schedule_list,
         schedule=schedule,
@@ -1661,16 +1725,19 @@ def drop_in_page():
         skill_level_options=SKILL_LEVEL_OPTIONS,
         drop_in_schedule_days=DROP_IN_SCHEDULE_DAYS,
         active_request_id=active_request_id,
+        active_open_id=active_open_id,
     )
 
 
-def _drop_in_redirect(tab="requests", request_id=None, schedule_id=None):
+def _drop_in_redirect(tab="requests", request_id=None, schedule_id=None, open_id=None):
     url = url_for("drop_in_page", tab=tab)
     params = []
     if request_id:
         params.append(f"request={request_id}")
     if schedule_id:
         params.append(f"schedule={schedule_id}")
+    if open_id:
+        params.append(f"open={open_id}")
     if params:
         url += "?" + "&".join(params)
     return redirect(url + "#drop-ins")
@@ -1708,6 +1775,7 @@ def friends_group_drop_in_request():
     requests_list = load_drop_in_requests()
     requests_list.append({
         "id": secrets.token_hex(8),
+        "type": "need",
         "requester": requester,
         "court": court,
         "play_date": play_date.isoformat(),
@@ -1722,6 +1790,130 @@ def friends_group_drop_in_request():
     return _drop_in_redirect()
 
 
+@app.route("/friends-group/drop-in/open", methods=["POST"])
+def drop_in_open_post():
+    """Post open-to-drop-in availability: name, court, days, time slot."""
+    player = request.form.get("player", "").strip()
+    court = request.form.get("court", "").strip()
+    days = [d for d in request.form.getlist("open_days") if d in OPEN_DROP_IN_DAYS]
+    time_slot = request.form.get("time_slot", "any").strip()
+    if time_slot not in OPEN_DROP_IN_TIME_SLOTS:
+        time_slot = "any"
+    if not player:
+        flash("Please select your name.", "error")
+        return _drop_in_redirect()
+    if not court:
+        flash("Please enter a court or location.", "error")
+        return _drop_in_redirect()
+    if not days:
+        flash("Select at least one day you're open to play.", "error")
+        return _drop_in_redirect()
+    requests_list = load_drop_in_requests()
+    requests_list = [r for r in requests_list if not (r.get("type") == "open" and r.get("player") == player)]
+    open_id = secrets.token_hex(8)
+    requests_list.append({
+        "id": open_id,
+        "type": "open",
+        "player": player,
+        "court": court,
+        "days": days,
+        "time_slot": time_slot,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "open",
+    })
+    save_drop_in_requests(requests_list)
+    flash(f"{player} is listed as open to drop-in.", "success")
+    return _drop_in_redirect(open_id=open_id)
+
+
+@app.route("/friends-group/drop-in/open/cancel", methods=["POST"])
+def drop_in_open_cancel():
+    open_id = request.form.get("open_id", "").strip()
+    player = request.form.get("player", "").strip()
+    if not open_id or not player:
+        flash("Could not remove that listing.", "error")
+        return _drop_in_redirect()
+    requests_list = load_drop_in_requests()
+    target = next((r for r in requests_list if r.get("id") == open_id and r.get("type") == "open"), None)
+    if not target or target.get("status") != "open":
+        flash("That open listing is no longer available.", "error")
+        return _drop_in_redirect()
+    if player.lower() != (target.get("player") or "").strip().lower():
+        flash("Enter your own name to remove this listing.", "error")
+        return _drop_in_redirect(open_id=open_id)
+    target["status"] = "cancelled"
+    save_drop_in_requests(requests_list)
+    flash("Open to drop-in listing removed.", "success")
+    return _drop_in_redirect()
+
+
+@app.route("/friends-group/drop-in/open/convert", methods=["POST"])
+def drop_in_open_convert():
+    """Convert an open listing into a full drop-in request for a specific day."""
+    open_id = request.form.get("open_id", "").strip()
+    requester = request.form.get("requester", "").strip()
+    court = request.form.get("court", "").strip()
+    play_date_str = request.form.get("play_date", "").strip()
+    time_mode = request.form.get("time_mode", "specific").strip()
+    time_str = request.form.get("time", "").strip()
+
+    if not open_id:
+        flash("Missing open listing.", "error")
+        return _drop_in_redirect()
+    requests_list = load_drop_in_requests()
+    target = next((r for r in requests_list if r.get("id") == open_id and r.get("type") == "open"), None)
+    if not target or target.get("status") != "open":
+        flash("That open listing is no longer available.", "error")
+        return _drop_in_redirect()
+
+    if not requester:
+        requester = (target.get("player") or "").strip()
+    if not court:
+        court = (target.get("court") or "").strip()
+    if requester.lower() != (target.get("player") or "").strip().lower():
+        flash("Only the person who posted can convert this to a full request.", "error")
+        return _drop_in_redirect(open_id=open_id)
+    if not court:
+        flash("Please enter a court or location.", "error")
+        return _drop_in_redirect(open_id=open_id)
+    try:
+        play_date = date.fromisoformat(play_date_str)
+    except ValueError:
+        flash("Please choose a valid date.", "error")
+        return _drop_in_redirect(open_id=open_id)
+    if play_date < _drop_in_requests_today():
+        flash("Date must be today or in the future.", "error")
+        return _drop_in_redirect(open_id=open_id)
+    weekday = play_date.strftime("%A")
+    if weekday not in (target.get("days") or []):
+        flash(f"{weekday} is not one of the days you listed. Pick a date on: {', '.join(target.get('days') or [])}.", "error")
+        return _drop_in_redirect(open_id=open_id)
+    if time_mode not in ("specific", "flexible"):
+        time_mode = "specific"
+    if time_mode == "specific" and not time_str:
+        flash("Please enter a time, or choose “any time that day”.", "error")
+        return _drop_in_redirect(open_id=open_id)
+
+    target["status"] = "converted"
+    new_id = secrets.token_hex(8)
+    requests_list.append({
+        "id": new_id,
+        "type": "need",
+        "requester": requester,
+        "court": court,
+        "play_date": play_date.isoformat(),
+        "time_mode": time_mode,
+        "time": time_str if time_mode == "specific" else "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "open",
+        "acceptances": [],
+        "converted_from_open": open_id,
+    })
+    save_drop_in_requests(requests_list)
+    flash(f"Converted to a full drop-in request for {format_game_day_display(play_date)}.", "success")
+    return _drop_in_redirect(request_id=new_id)
+
+
 @app.route("/friends-group/drop-in-accept", methods=["POST"])
 def friends_group_drop_in_accept():
     """Accept someone else's drop-in request."""
@@ -1732,7 +1924,10 @@ def friends_group_drop_in_accept():
         return _drop_in_redirect()
 
     requests_list = load_drop_in_requests()
-    target = next((r for r in requests_list if r.get("id") == request_id), None)
+    target = next(
+        (r for r in requests_list if r.get("id") == request_id and r.get("type") != "open"),
+        None,
+    )
     if not target or target.get("status") != "open":
         flash("That drop-in request is no longer available.", "error")
         return _drop_in_redirect()
@@ -1761,7 +1956,10 @@ def friends_group_drop_in_cancel():
         return _drop_in_redirect()
 
     requests_list = load_drop_in_requests()
-    target = next((r for r in requests_list if r.get("id") == request_id), None)
+    target = next(
+        (r for r in requests_list if r.get("id") == request_id and r.get("type") != "open"),
+        None,
+    )
     if not target or target.get("status") != "open":
         flash("That drop-in request is no longer available.", "error")
         return _drop_in_redirect()
