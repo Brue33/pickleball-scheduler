@@ -45,6 +45,15 @@
       <p class="fg-card-desc">Full match history, scores, and outcomes.</p>
       <p class="fg-card-meta fg-meta-muted">{{ match_count }} game{{ 's' if match_count != 1 else '' }} recorded</p>
     </a>
+
+    <a href="{{ url_for('drop_in_page') }}" class="fg-card">
+      <span class="fg-card-icon" aria-hidden="true">D</span>
+      <h2 class="fg-card-title">Drop-in</h2>
+      <p class="fg-card-desc">Request players, add guests, and generate a casual schedule.</p>
+      <p class="fg-card-meta {% if drop_in_has_schedule %}fg-meta-ok{% else %}fg-meta-muted{% endif %}">
+        {% if drop_in_has_schedule %}Schedule live{% elif drop_in_request_count %}{{ drop_in_request_count }} open request{{ 's' if drop_in_request_count != 1 else '' }}{% else %}No active schedule{% endif %}
+      </p>
+    </a>
   </div>
 {% endblock %}
 

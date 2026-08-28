@@ -5,6 +5,7 @@
   <p style="margin-bottom: 0.35rem; color: var(--muted); font-size: 0.9rem;">
     All history · avg points per game (scored games only) · ties broken by wins
     {% if has_prior_week %} · +/- = change since prior game week{% endif %}
+    · Ranked = {{ min_games_for_ranked }}+ scored games
   </p>
   <p style="margin-bottom: 1rem;">
     <button type="button" id="recent-weeks-btn" class="btn btn-secondary">Review recent weeks</button>
@@ -15,15 +16,23 @@
   </p>
   <script type="application/json" id="rebuild-current-ratings">{{ current_rankings|tojson }}</script>
 
-  {% if points_leaderboard %}
-    <table>
+  {% macro rankings_table(leaderboard, show_rank) %}
+    <table class="rankings-table">
       <thead>
-        <tr><th>#</th><th>Player</th><th>Avg pts</th>{% if has_prior_week %}<th>+/-</th>{% endif %}<th>Games</th><th>W–L</th></tr>
+        <tr>
+          {% if show_rank %}<th>#</th>{% endif %}
+          <th>Player</th>
+          <th>Avg pts</th>
+          {% if has_prior_week %}<th>+/-</th>{% endif %}
+          <th>Games</th>
+          <th>W–L</th>
+          <th>Win %</th>
+        </tr>
       </thead>
       <tbody>
-        {% for player, st in points_leaderboard %}
+        {% for player, st in leaderboard %}
           <tr>
-            <td>{{ loop.index }}</td>
+            {% if show_rank %}<td>{{ loop.index }}</td>{% endif %}
             <td>
               <button type="button" class="player-name-btn" data-player="{{ player|e }}" data-bio="{{ (bios.get(player, '') or '')|e|replace('\n', '&#10;') }}">{{ player }}</button>
             </td>
@@ -40,10 +49,32 @@
             {% endif %}
             <td>{{ st.games }}</td>
             <td>{{ st.wins }}–{{ st.losses }}</td>
+            <td>{{ st.win_pct }}%</td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
+  {% endmacro %}
+
+  {% if points_leaderboard %}
+    <div class="rankings-boards">
+      <section class="rankings-board-section">
+        <h2 class="rankings-board-title">Ranked</h2>
+        {% if points_leaderboard_ranked %}
+          {{ rankings_table(points_leaderboard_ranked, true) }}
+        {% else %}
+          <p class="rankings-board-empty">No ranked players yet (need {{ min_games_for_ranked }}+ scored games).</p>
+        {% endif %}
+      </section>
+
+      {% if points_leaderboard_unranked %}
+      <section class="rankings-board-section">
+        <h2 class="rankings-board-title">Unranked</h2>
+        <p class="rankings-board-note">Fewer than {{ min_games_for_ranked }} scored games — same stats, no rank # yet.</p>
+        {{ rankings_table(points_leaderboard_unranked, false) }}
+      </section>
+      {% endif %}
+    </div>
     <p style="color: var(--muted); font-size: 0.85rem; margin-top: 0.75rem;">
       Based on {{ scored_match_count }} scored game(s). Games without scores are excluded (0 counts).
     </p>
@@ -269,6 +300,33 @@
     .avg-delta-new { color: var(--muted); font-size: 0.85rem; font-style: italic; }
     .personal-review-modal-content { max-width: 40rem; max-height: 85vh; overflow-y: auto; }
     .personal-games-wrap { margin-top: 0.75rem; }
+    .rankings-boards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+      gap: 1.5rem 2rem;
+      align-items: start;
+      max-width: 64rem;
+    }
+    .rankings-board-section { min-width: 0; }
+    .rankings-board-title {
+      margin: 0 0 0.5rem 0;
+      font-size: 1.1rem;
+      color: var(--accent);
+    }
+    .rankings-board-note {
+      margin: 0 0 0.65rem 0;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .rankings-board-empty {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .rankings-table { max-width: 100%; }
+    @media (max-width: 520px) {
+      .rankings-boards { grid-template-columns: 1fr; }
+    }
   </style>
   <script>
     document.addEventListener('DOMContentLoaded', function() {

@@ -7,6 +7,7 @@ import json
 import hmac
 import hashlib
 import os
+import secrets
 from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
 from zoneinfo import ZoneInfo
@@ -45,9 +46,23 @@ PLAYER_BIOS_FILE = _DATA_DIR / "player_bios.json"
 MATCH_HISTORY_FILE = _DATA_DIR / "match_history.json"
 AVAILABILITY_FILE = _DATA_DIR / "availability.json"
 MENS_LEAGUE_STANDINGS_FILE = _DATA_DIR / "mens_league_standings.json"
+DROP_IN_REQUESTS_FILE = _DATA_DIR / "drop_in_requests.json"
+DROP_IN_HUB_FILE = _DATA_DIR / "drop_in_hub.json"
 REPLAY_STARTING_RATINGS_FILE = _DATA_DIR / "replay_starting_ratings.json"
 PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
+DROP_IN_SCHEDULE_DAYS = 14
+
+SKILL_LEVEL_OPTIONS = [
+    ("below_2", "Below 2.0", 1000),
+    ("2.0", "2.0", 1200),
+    ("2.5", "2.5", 1300),
+    ("3.0", "3.0", 1400),
+    ("3.5", "3.5", 1500),
+    ("4.0", "4.0", 1600),
+    ("4.5", "4.5", 1700),
+    ("above_5", "Above 5.0", 2000),
+]
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 
 
@@ -290,6 +305,10 @@ def compute_points_stats(matches):
                 st["losses"] += 1
     for st in stats.values():
         st["avg"] = round(st["points"] / st["games"], 2) if st["games"] else 0.0
+        if st["games"]:
+            st["win_pct"] = round(100 * st["wins"] / st["games"], 1)
+        else:
+            st["win_pct"] = 0.0
     return stats
 
 
@@ -299,6 +318,17 @@ def sort_points_leaderboard(stats):
         stats.items(),
         key=lambda x: (-x[1]["avg"], -x[1]["wins"], x[0].lower()),
     )
+
+
+MIN_GAMES_FOR_RANKED = 16  # more than 15 scored games
+
+
+def split_ranked_points_leaderboard(stats):
+    """Split leaderboard into ranked (16+ games) and unranked (15 or fewer)."""
+    board = sort_points_leaderboard(stats)
+    ranked = [(p, st) for p, st in board if st["games"] >= MIN_GAMES_FOR_RANKED]
+    unranked = [(p, st) for p, st in board if st["games"] < MIN_GAMES_FOR_RANKED]
+    return ranked, unranked
 
 
 def compute_avg_delta_since_prior_week(matches):
@@ -895,6 +925,158 @@ def clear_drop_in_schedule():
         DROP_IN_SCHEDULE_FILE.unlink()
 
 
+def load_drop_in_requests():
+    """Load open drop-in coordination requests from players."""
+    if not DROP_IN_REQUESTS_FILE.exists():
+        return []
+    try:
+        with open(DROP_IN_REQUESTS_FILE) as f:
+            data = json.load(f)
+        requests_list = data.get("requests", [])
+        return requests_list if isinstance(requests_list, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def save_drop_in_requests(requests):
+    with open(DROP_IN_REQUESTS_FILE, "w") as f:
+        json.dump({"requests": requests}, f, indent=2)
+
+
+def _drop_in_requests_today():
+    return datetime.now(GAME_DAY_TZ).date()
+
+
+def active_drop_in_requests():
+    """Open requests for today or later, sorted by play date."""
+    today = _drop_in_requests_today()
+    active = []
+    for req in load_drop_in_requests():
+        if req.get("status") != "open":
+            continue
+        try:
+            play_date = date.fromisoformat(req["play_date"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if play_date < today:
+            continue
+        active.append(req)
+    active.sort(key=lambda r: (r.get("play_date", ""), r.get("created_at", "")))
+    return active
+
+
+def format_drop_in_request_display(req):
+    """Add human-readable date/time fields for templates."""
+    play_date = date.fromisoformat(req["play_date"])
+    day_display = format_game_day_display(play_date)
+    if req.get("time_mode") == "flexible":
+        when_display = f"{day_display}, any time"
+    else:
+        time_str = (req.get("time") or "").strip()
+        when_display = f"{day_display} at {time_str}" if time_str else day_display
+    return {
+        **req,
+        "day_display": day_display,
+        "when_display": when_display,
+        "acceptances": list(req.get("acceptances") or []),
+    }
+
+
+def skill_level_rating(skill_key):
+    for key, _label, rating in SKILL_LEVEL_OPTIONS:
+        if key == skill_key:
+            return rating
+    return DEFAULT_RATING
+
+
+def load_drop_in_hub():
+    default = {"guests": [], "schedule": None}
+    if not DROP_IN_HUB_FILE.exists():
+        return default
+    try:
+        with open(DROP_IN_HUB_FILE) as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return default
+        data.setdefault("guests", [])
+        data.setdefault("schedule", None)
+        return data
+    except (json.JSONDecodeError, OSError):
+        return default
+
+
+def save_drop_in_hub(data):
+    with open(DROP_IN_HUB_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _parse_iso_utc(iso_str):
+    dt = datetime.fromisoformat(iso_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def purge_expired_drop_in_hub_schedule(hub=None):
+    hub = hub if hub is not None else load_drop_in_hub()
+    sched = hub.get("schedule")
+    if not sched:
+        return hub
+    expires_at = sched.get("expires_at")
+    if not expires_at:
+        return hub
+    try:
+        if datetime.now(timezone.utc) > _parse_iso_utc(expires_at):
+            hub["schedule"] = None
+            save_drop_in_hub(hub)
+    except (ValueError, TypeError):
+        pass
+    return hub
+
+
+def active_drop_in_hub_schedule():
+    hub = purge_expired_drop_in_hub_schedule()
+    sched = hub.get("schedule")
+    if not sched or not isinstance(sched.get("schedule_entries"), list):
+        return None
+    players = sched.get("players") or []
+    add_round_court_and_bye(sched["schedule_entries"], players, sched.get("num_courts"))
+    return sched
+
+
+def drop_in_hub_guest_names(hub=None):
+    hub = hub if hub is not None else load_drop_in_hub()
+    return [g["name"] for g in hub.get("guests", []) if g.get("name")]
+
+
+def build_drop_in_rankings(players, guests):
+    rankings = dict(load_rankings())
+    for g in guests:
+        name = (g.get("name") or "").strip()
+        if name:
+            rankings[name] = int(g.get("rating", DEFAULT_RATING))
+    for p in players:
+        if p not in rankings:
+            rankings[p] = DEFAULT_RATING
+    return rankings
+
+
+def format_drop_in_schedule_display(sched):
+    if not sched:
+        return None
+    try:
+        expires = _parse_iso_utc(sched["expires_at"])
+        expires_display = expires.astimezone(GAME_DAY_TZ).strftime("%A, %B ") + _ordinal_day(expires.astimezone(GAME_DAY_TZ).date())
+    except (KeyError, ValueError, TypeError):
+        expires_display = ""
+    try:
+        created = _parse_iso_utc(sched["created_at"])
+        created_display = created.astimezone(GAME_DAY_TZ).strftime("%b %d, %Y")
+    except (KeyError, ValueError, TypeError):
+        created_display = ""
+    return {**sched, "expires_display": expires_display, "created_display": created_display}
+
+
 def _require_schedule_password():
     """Return True if request form password matches schedule password."""
     return request.form.get("password", "").strip() == SCHEDULE_PASSWORD
@@ -1291,8 +1473,11 @@ def friends_group():
         elif st == "partial":
             players_partial += 1
     matches = load_match_history()
-    points_board = sort_points_leaderboard(compute_points_stats(matches))
-    top_ranked = points_board[0][0] if points_board else None
+    points_stats = compute_points_stats(matches)
+    points_board_ranked, _ = split_ranked_points_leaderboard(points_stats)
+    top_ranked = points_board_ranked[0][0] if points_board_ranked else None
+    player_list = load_players_list()
+    drop_in_has_schedule = bool(active_drop_in_hub_schedule())
     return render_template(
         "friends_group.html",
         next_game_date_display=next_game_date_display,
@@ -1302,7 +1487,256 @@ def friends_group():
         players_partial=players_partial,
         match_count=len(matches),
         top_ranked=top_ranked,
+        drop_in_has_schedule=drop_in_has_schedule,
+        drop_in_request_count=len(active_drop_in_requests()),
     )
+
+
+@app.route("/friends-group/drop-in")
+def drop_in_page():
+    """Drop-in hub: requests, guest players, schedule generation, 14-day schedule view."""
+    hub = purge_expired_drop_in_hub_schedule()
+    guests = hub.get("guests", [])
+    player_list = load_players_list()
+    guest_names = {g["name"] for g in guests}
+    drop_in_requests = [format_drop_in_request_display(r) for r in active_drop_in_requests()]
+    schedule = active_drop_in_hub_schedule()
+    schedule_display = format_drop_in_schedule_display(schedule) if schedule else None
+    tab = (request.args.get("tab") or "requests").strip().lower()
+    if tab not in ("requests", "generate", "schedule"):
+        tab = "requests"
+    all_players_for_generate = list(player_list) + [g["name"] for g in guests if g.get("name")]
+    return render_template(
+        "drop_in.html",
+        tab=tab,
+        player_list=player_list,
+        guests=guests,
+        guest_names=guest_names,
+        drop_in_requests=drop_in_requests,
+        drop_in_min_date=_drop_in_requests_today().isoformat(),
+        schedule=schedule_display,
+        all_players_for_generate=all_players_for_generate,
+        skill_level_options=SKILL_LEVEL_OPTIONS,
+        drop_in_schedule_days=DROP_IN_SCHEDULE_DAYS,
+    )
+
+
+def _drop_in_redirect(tab="requests"):
+    return redirect(url_for("drop_in_page", tab=tab) + "#drop-ins")
+
+
+@app.route("/friends-group/drop-in-request", methods=["POST"])
+def friends_group_drop_in_request():
+    """Post a drop-in request: who needs a game, court, day, and optional time."""
+    requester = request.form.get("requester", "").strip()
+    court = request.form.get("court", "").strip()
+    play_date_str = request.form.get("play_date", "").strip()
+    time_mode = request.form.get("time_mode", "specific").strip()
+    time_str = request.form.get("time", "").strip()
+
+    if not requester:
+        flash("Please select your name.", "error")
+        return _drop_in_redirect()
+    if not court:
+        flash("Please enter a court or location.", "error")
+        return _drop_in_redirect()
+    try:
+        play_date = date.fromisoformat(play_date_str)
+    except ValueError:
+        flash("Please choose a valid date.", "error")
+        return _drop_in_redirect()
+    if play_date < _drop_in_requests_today():
+        flash("Date must be today or in the future.", "error")
+        return _drop_in_redirect()
+    if time_mode not in ("specific", "flexible"):
+        time_mode = "specific"
+    if time_mode == "specific" and not time_str:
+        flash("Please enter a time, or choose “any time that day”.", "error")
+        return _drop_in_redirect()
+
+    requests_list = load_drop_in_requests()
+    requests_list.append({
+        "id": secrets.token_hex(8),
+        "requester": requester,
+        "court": court,
+        "play_date": play_date.isoformat(),
+        "time_mode": time_mode,
+        "time": time_str if time_mode == "specific" else "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "open",
+        "acceptances": [],
+    })
+    save_drop_in_requests(requests_list)
+    flash(f"Drop-in request posted for {format_game_day_display(play_date)}.", "success")
+    return _drop_in_redirect()
+
+
+@app.route("/friends-group/drop-in-accept", methods=["POST"])
+def friends_group_drop_in_accept():
+    """Accept someone else's drop-in request."""
+    request_id = request.form.get("request_id", "").strip()
+    accepter = request.form.get("accepter", "").strip()
+    if not request_id or not accepter:
+        flash("Please select your name to accept.", "error")
+        return _drop_in_redirect()
+
+    requests_list = load_drop_in_requests()
+    target = next((r for r in requests_list if r.get("id") == request_id), None)
+    if not target or target.get("status") != "open":
+        flash("That drop-in request is no longer available.", "error")
+        return _drop_in_redirect()
+    if accepter == target.get("requester"):
+        flash("You can't accept your own request.", "error")
+        return _drop_in_redirect()
+    acceptances = list(target.get("acceptances") or [])
+    if accepter in acceptances:
+        flash("You're already on this drop-in.", "error")
+        return _drop_in_redirect()
+
+    acceptances.append(accepter)
+    target["acceptances"] = acceptances
+    save_drop_in_requests(requests_list)
+    flash(f"You're in for {target.get('requester')}'s drop-in.", "success")
+    return _drop_in_redirect()
+
+
+@app.route("/friends-group/drop-in-cancel", methods=["POST"])
+def friends_group_drop_in_cancel():
+    """Cancel your own drop-in request."""
+    request_id = request.form.get("request_id", "").strip()
+    requester = request.form.get("requester", "").strip()
+    if not request_id or not requester:
+        flash("Could not cancel that request.", "error")
+        return _drop_in_redirect()
+
+    requests_list = load_drop_in_requests()
+    target = next((r for r in requests_list if r.get("id") == request_id), None)
+    if not target or target.get("status") != "open":
+        flash("That drop-in request is no longer available.", "error")
+        return _drop_in_redirect()
+    if requester != target.get("requester"):
+        flash("Only the person who posted can cancel this request.", "error")
+        return _drop_in_redirect()
+
+    target["status"] = "cancelled"
+    save_drop_in_requests(requests_list)
+    flash("Drop-in request cancelled.", "success")
+    return _drop_in_redirect()
+
+
+@app.route("/friends-group/drop-in/guest", methods=["POST"])
+def drop_in_add_guest():
+    name = request.form.get("guest_name", "").strip()
+    skill = request.form.get("skill_level", "").strip()
+    if not name:
+        flash("Enter a guest name.", "error")
+        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+    if len(name) > 60:
+        flash("Guest name is too long.", "error")
+        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+    hub = load_drop_in_hub()
+    roster = set(load_players_list())
+    existing_guests = {g["name"].lower() for g in hub.get("guests", [])}
+    if name in roster or name.lower() in existing_guests:
+        flash(f"{name} is already on the list.", "error")
+        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+    rating = skill_level_rating(skill)
+    hub.setdefault("guests", []).append({
+        "id": secrets.token_hex(6),
+        "name": name,
+        "rating": rating,
+        "skill_level": skill,
+        "added_at": datetime.now(timezone.utc).isoformat(),
+    })
+    save_drop_in_hub(hub)
+    flash(f"Added guest {name} (ELO {rating}).", "success")
+    return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+
+
+@app.route("/friends-group/drop-in/guest/remove", methods=["POST"])
+def drop_in_remove_guest():
+    guest_id = request.form.get("guest_id", "").strip()
+    hub = load_drop_in_hub()
+    guests = hub.get("guests", [])
+    hub["guests"] = [g for g in guests if g.get("id") != guest_id]
+    save_drop_in_hub(hub)
+    flash("Guest removed.", "success")
+    return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+
+
+@app.route("/friends-group/drop-in/generate", methods=["POST"])
+def drop_in_generate_schedule():
+    created_by = request.form.get("created_by", "").strip()
+    selected = request.form.getlist("selected_players")
+    games_str = request.form.get("games", "").strip()
+    time_location = request.form.get("time_location", "").strip()
+    num_courts = 2
+    try:
+        nc = request.form.get("num_courts", "2").strip()
+        if nc:
+            num_courts = max(1, min(8, int(nc)))
+    except ValueError:
+        pass
+    rotate_partners = request.form.get("rotate_partners") == "on"
+
+    players = [p.strip() for p in selected if p and p.strip()]
+    players = list(dict.fromkeys(players))
+    if len(players) < 4:
+        flash("Select at least 4 players (roster or guests).", "error")
+        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+
+    hub = load_drop_in_hub()
+    guests = hub.get("guests", [])
+    allowed = set(load_players_list()) | {g["name"] for g in guests}
+    for p in players:
+        if p not in allowed:
+            flash(f"Unknown player: {p}", "error")
+            return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+
+    games = None
+    if games_str:
+        try:
+            games = int(games_str)
+            if games < 1:
+                games = None
+        except ValueError:
+            pass
+
+    if not rotate_partners:
+        flash("Drop-in schedules use rotating partners.", "error")
+        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+
+    try:
+        rankings = build_drop_in_rankings(players, guests)
+        total_games = (games * num_courts) if games else None
+        schedule_list, rankings = generate_schedule(
+            players,
+            games_per_round=total_games,
+            num_courts=num_courts,
+            rankings_override=rankings,
+        )
+        lines = format_schedule(schedule_list, rankings, players=players)
+        schedule_entries = build_schedule_entries_from_list(schedule_list, rankings, players, lines)
+        add_round_court_and_bye(schedule_entries, players, num_courts=num_courts)
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(days=DROP_IN_SCHEDULE_DAYS)
+        hub["schedule"] = {
+            "created_at": now.isoformat(),
+            "expires_at": expires.isoformat(),
+            "created_by": created_by or "Someone",
+            "players": players,
+            "schedule_entries": schedule_entries,
+            "rankings": dict(rankings),
+            "time_location": time_location,
+            "num_courts": num_courts,
+            "rotate_partners": True,
+        }
+        save_drop_in_hub(hub)
+        flash(f"Drop-in schedule ready — visible for {DROP_IN_SCHEDULE_DAYS} days.", "success")
+        return redirect(url_for("drop_in_page", tab="schedule") + "#drop-ins")
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
 
 
 @app.route("/commish-tool")
@@ -2117,7 +2551,8 @@ def results():
 def rankings():
     matches = load_match_history()
     points_stats = compute_points_stats(matches)
-    points_leaderboard = sort_points_leaderboard(points_stats)
+    points_leaderboard_ranked, points_leaderboard_unranked = split_ranked_points_leaderboard(points_stats)
+    points_leaderboard = points_leaderboard_ranked + points_leaderboard_unranked
     avg_deltas = compute_avg_delta_since_prior_week(matches)
     has_prior_week = bool(avg_deltas) or len(
         {game_week_key(m) for m in matches if match_has_scores(m) and game_week_key(m)}
@@ -2131,6 +2566,9 @@ def rankings():
     return render_template(
         "rankings.html",
         points_leaderboard=points_leaderboard,
+        points_leaderboard_ranked=points_leaderboard_ranked,
+        points_leaderboard_unranked=points_leaderboard_unranked,
+        min_games_for_ranked=MIN_GAMES_FOR_RANKED,
         avg_deltas=avg_deltas,
         has_prior_week=has_prior_week,
         bios=bios,
@@ -2280,6 +2718,20 @@ def export_drop_in_schedule():
         return jsonify({"error": "Forbidden"}), 403
     data = load_drop_in_schedule()
     return jsonify(data) if data else jsonify({})
+
+
+@app.route("/export/drop_in_requests")
+def export_drop_in_requests():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify({"requests": load_drop_in_requests()})
+
+
+@app.route("/export/drop_in_hub")
+def export_drop_in_hub():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify(purge_expired_drop_in_hub_schedule())
 
 
 @app.route("/export/mens_league_standings")

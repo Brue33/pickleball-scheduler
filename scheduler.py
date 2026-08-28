@@ -179,7 +179,7 @@ def update_rankings_for_match(rankings, team1, team2, winner, score_team1=None, 
     return ratings
 
 
-def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, num_courts=None, player_constraints=None):
+def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, num_courts=None, player_constraints=None, rankings_override=None):
     """
     players: list of player names (4 or more; odd allowed — byes used as needed).
     games_per_round: number of games to generate (default: enough so each player plays every round).
@@ -195,7 +195,10 @@ def generate_schedule(players, games_per_round=None, max_with=2, max_against=2, 
     if n < 4:
         raise ValueError("Need at least 4 players.")
     player_constraints = dict(player_constraints or {})
-    rankings = load_rankings()
+    if rankings_override is not None:
+        rankings = dict(rankings_override)
+    else:
+        rankings = load_rankings()
     for p in players:
         if p not in rankings:
             rankings[p] = DEFAULT_RATING
