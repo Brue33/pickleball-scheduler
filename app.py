@@ -97,6 +97,23 @@ RESALE_COMMENT_TYPES = {
 RESALE_ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
 RESALE_MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
+COURT_INDOOR_OUTDOOR_OPTIONS = {
+    "indoor": "Indoor",
+    "outdoor": "Outdoor",
+    "both": "Both",
+}
+COURT_NET_STYLE_OPTIONS = {
+    "permanent": "Permanent Nets",
+    "portable": "Portable Nets",
+    "byo": "BYO Net",
+    "unsure": "Unsure on Nets",
+}
+COURT_COST_OPTIONS = {
+    "fee": "Fee",
+    "free": "Free",
+    "unsure": "Unsure",
+}
+
 SKILL_LEVEL_OPTIONS = [
     ("below_2", "Below 2.0", 1000),
     ("2.0", "2.0", 1200),
@@ -2522,16 +2539,26 @@ def _court_booking_url_valid(url):
 
 def format_court_booking_display(court):
     name = (court.get("name") or "").strip()
+    city = (court.get("city") or "").strip()
+    address = (court.get("address") or "").strip()
     indoor_outdoor = court.get("indoor_outdoor", "indoor")
-    if indoor_outdoor not in ("indoor", "outdoor"):
+    if indoor_outdoor not in COURT_INDOOR_OUTDOOR_OPTIONS:
         indoor_outdoor = "indoor"
-    io_label = "Indoor" if indoor_outdoor == "indoor" else "Outdoor"
+    io_label = COURT_INDOOR_OUTDOOR_OPTIONS[indoor_outdoor]
     num_courts = court.get("num_courts")
-    net_style = (court.get("net_style") or "").strip()
+    net_key = (court.get("net_style") or "").strip()
+    net_label = COURT_NET_STYLE_OPTIONS.get(net_key, net_key)
+    cost_key = (court.get("booking_cost") or "").strip()
+    cost_label = COURT_COST_OPTIONS.get(cost_key, "")
     bookable = bool(court.get("bookable"))
     booking_url = (court.get("booking_url") or "").strip()
 
-    desc_parts = [io_label]
+    desc_parts = []
+    if city:
+        desc_parts.append(city)
+    if address:
+        desc_parts.append(address)
+    desc_parts.append(io_label)
     if num_courts is not None and num_courts != "":
         try:
             n = int(num_courts)
@@ -2539,8 +2566,10 @@ def format_court_booking_display(court):
                 desc_parts.append(f"{n} court{'s' if n != 1 else ''}")
         except (TypeError, ValueError):
             pass
-    if net_style:
-        desc_parts.append(net_style)
+    if net_label:
+        desc_parts.append(net_label)
+    if cost_label:
+        desc_parts.append(cost_label)
 
     if bookable and booking_url:
         meta = "Book online →"
@@ -2586,23 +2615,38 @@ def court_bookings_page():
         "court_bookings.html",
         courts=courts,
         show_add=show_add,
+        indoor_outdoor_options=COURT_INDOOR_OUTDOOR_OPTIONS,
+        net_style_options=COURT_NET_STYLE_OPTIONS,
+        cost_options=COURT_COST_OPTIONS,
     )
 
 
 @app.route("/court-bookings/add", methods=["POST"])
 def court_bookings_add():
     name = request.form.get("name", "").strip()
+    city = request.form.get("city", "").strip()
+    address = request.form.get("address", "").strip()
     num_courts_raw = request.form.get("num_courts", "").strip()
     indoor_outdoor = request.form.get("indoor_outdoor", "").strip()
     net_style = request.form.get("net_style", "").strip()
+    booking_cost = request.form.get("booking_cost", "").strip()
     bookable = request.form.get("bookable", "no").strip() == "yes"
     booking_url = request.form.get("booking_url", "").strip()
 
     if not name:
         flash("Court name is required.", "error")
         return _court_bookings_redirect(show_add=True)
-    if indoor_outdoor not in ("indoor", "outdoor"):
-        flash("Select indoor or outdoor.", "error")
+    if not city:
+        flash("City is required.", "error")
+        return _court_bookings_redirect(show_add=True)
+    if indoor_outdoor not in COURT_INDOOR_OUTDOOR_OPTIONS:
+        flash("Select indoor, outdoor, or both.", "error")
+        return _court_bookings_redirect(show_add=True)
+    if net_style and net_style not in COURT_NET_STYLE_OPTIONS:
+        flash("Select a valid net style.", "error")
+        return _court_bookings_redirect(show_add=True)
+    if booking_cost and booking_cost not in COURT_COST_OPTIONS:
+        flash("Select a valid cost option.", "error")
         return _court_bookings_redirect(show_add=True)
 
     num_courts = None
@@ -2629,9 +2673,12 @@ def court_bookings_add():
     courts.append({
         "id": secrets.token_hex(8),
         "name": name[:80],
+        "city": city[:80],
+        "address": address[:120],
         "num_courts": num_courts,
         "indoor_outdoor": indoor_outdoor,
-        "net_style": net_style[:60],
+        "net_style": net_style,
+        "booking_cost": booking_cost,
         "bookable": bookable,
         "booking_url": booking_url[:500],
         "created_at": datetime.now(timezone.utc).isoformat(),
