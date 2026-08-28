@@ -207,6 +207,12 @@
           <p class="di-schedule-meta"><strong>Players:</strong> {{ schedule.players|join(', ') }}</p>
           {% include "_drop_in_schedule_table.html" %}
           <p class="di-hint" style="margin-top: 0.75rem;">View only — scores and rankings are not updated from drop-in schedules.</p>
+          <form method="post" action="{{ url_for('drop_in_delete_schedule') }}" class="di-delete-form" onsubmit="return confirm('Delete this drop-in schedule?');">
+            <input type="hidden" name="request_id" value="{{ schedule.request_id }}">
+            <label for="delete-requester-name">Name of person who requested this drop-in</label>
+            <input type="text" id="delete-requester-name" name="requester_name" placeholder="e.g. {{ schedule.requester|e }}" required style="max-width: 16rem;">
+            <button type="submit" class="btn btn-secondary di-delete-btn">Delete drop-in schedule</button>
+          </form>
         {% elif schedule_list|length > 1 %}
           <p class="di-hint">Choose a schedule above.</p>
         {% endif %}
@@ -355,6 +361,15 @@
       border-color: var(--accent);
     }
     .di-draft-block { margin-top: 0.5rem; }
+    .di-delete-form {
+      margin-top: 1.25rem;
+      padding: 0.85rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--court-line);
+      border-radius: 8px;
+      max-width: 22rem;
+    }
+    .di-delete-btn { margin-top: 0.5rem; background: var(--error); color: var(--text); border-color: var(--error); }
     @media (max-width: 520px) {
       .di-request-top { flex-direction: column; align-items: stretch; }
     }

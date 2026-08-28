@@ -1139,6 +1139,9 @@ def active_drop_in_schedules_list():
         req = _drop_in_request_for_schedule(sched_copy, requests_by_id)
         display["label"] = drop_in_schedule_label(req)
         display["request_id"] = rid
+        display["requester"] = (
+            sched_copy.get("requester") or sched_copy.get("created_by") or req.get("requester") or ""
+        )
         results.append(display)
     results.sort(key=lambda s: s.get("created_at", ""), reverse=True)
     return results
@@ -1946,6 +1949,32 @@ def drop_in_publish_schedule():
     save_drop_in_hub(hub)
     flash(f"Schedule posted — visible for {DROP_IN_SCHEDULE_DAYS} days.", "success")
     return _drop_in_redirect(tab="schedule", schedule_id=request_id)
+
+
+@app.route("/friends-group/drop-in/schedule/delete", methods=["POST"])
+def drop_in_delete_schedule():
+    request_id = request.form.get("request_id", "").strip()
+    name_entered = request.form.get("requester_name", "").strip()
+    if not request_id:
+        flash("Missing schedule.", "error")
+        return _drop_in_redirect(tab="schedule")
+    if not name_entered:
+        flash("Enter the name of the person who requested this drop-in.", "error")
+        return _drop_in_redirect(tab="schedule", schedule_id=request_id)
+    hub = purge_expired_drop_in_schedules()
+    sched = hub.get("schedules", {}).get(request_id)
+    if not sched:
+        flash("That schedule is no longer available.", "error")
+        return _drop_in_redirect(tab="schedule")
+    expected = (sched.get("requester") or sched.get("created_by") or "").strip()
+    if name_entered.lower() != expected.lower():
+        flash(f"Name must match the requester ({expected}).", "error")
+        return _drop_in_redirect(tab="schedule", schedule_id=request_id)
+    del hub["schedules"][request_id]
+    hub.get("drafts", {}).pop(request_id, None)
+    save_drop_in_hub(hub)
+    flash("Drop-in schedule deleted.", "success")
+    return _drop_in_redirect(tab="schedule")
 
 
 @app.route("/commish-tool")
