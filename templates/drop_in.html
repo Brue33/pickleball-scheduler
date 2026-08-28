@@ -4,12 +4,11 @@
   <p><a href="{{ url_for('friends_group') }}">← Friends Group</a></p>
   <header class="di-header">
     <h1>Drop-in</h1>
-    <p class="di-tagline">Request players, add guests, and build a casual schedule — no password needed.</p>
+    <p class="di-tagline">Request players, build a group, and generate a schedule — no password needed.</p>
   </header>
 
   <nav class="di-tabs" aria-label="Drop-in sections">
     <a href="{{ url_for('drop_in_page', tab='requests') }}#drop-ins" class="di-tab {% if tab == 'requests' %}di-tab-active{% endif %}">Requests{% if drop_in_requests %} ({{ drop_in_requests|length }}){% endif %}</a>
-    <a href="{{ url_for('drop_in_page', tab='generate') }}#drop-ins" class="di-tab {% if tab == 'generate' %}di-tab-active{% endif %}">Generate</a>
     <a href="{{ url_for('drop_in_page', tab='schedule') }}#drop-ins" class="di-tab {% if tab == 'schedule' %}di-tab-active{% endif %}">Schedule{% if schedule %} · live{% endif %}</a>
   </nav>
 
@@ -18,7 +17,7 @@
       <div class="di-section-header">
         <div>
           <h2 class="di-section-title">Drop-in requests</h2>
-          <p class="di-section-sub">Need a fourth? Post when and where. Others can tap in to join.</p>
+          <p class="di-section-sub">Post a request, have others accept, then generate a schedule right in the same box.</p>
         </div>
         <button type="button" class="btn" id="dropin-toggle" aria-expanded="false" aria-controls="dropin-form-panel">Request a drop-in</button>
       </div>
@@ -63,122 +62,110 @@
       {% if drop_in_requests %}
         <div class="di-request-list">
           {% for req in drop_in_requests %}
-            <article class="di-request-card">
-              <div class="di-request-main">
-                <p class="di-request-who"><strong>{{ req.requester }}</strong> needs a drop-in</p>
-                <p class="di-request-detail"><span class="di-label">Court</span> {{ req.court }}</p>
-                <p class="di-request-detail"><span class="di-label">When</span> {{ req.when_display }}</p>
-                {% if req.acceptances %}
-                  <p class="di-request-joined"><span class="di-label">Joined</span> {{ req.acceptances|join(', ') }}</p>
-                {% endif %}
+            <article id="req-{{ req.id }}" class="di-request-card">
+              <div class="di-request-top">
+                <div class="di-request-main">
+                  <p class="di-request-who"><strong>{{ req.requester }}</strong> needs a drop-in</p>
+                  <p class="di-request-detail"><span class="di-label">Court</span> {{ req.court }}</p>
+                  <p class="di-request-detail"><span class="di-label">When</span> {{ req.when_display }}</p>
+                  <p class="di-roster-line">
+                    <span class="di-label">Playing</span>
+                    {{ req.roster|join(', ') }}
+                    <span class="di-roster-count">({{ req.roster|length }})</span>
+                  </p>
+                </div>
+                <div class="di-request-actions">
+                  <form method="post" action="{{ url_for('friends_group_drop_in_accept') }}" class="di-accept-form">
+                    <input type="hidden" name="request_id" value="{{ req.id }}">
+                    <select name="accepter" required aria-label="Your name">
+                      <option value="">I'm in — select name</option>
+                      {% for p in player_list %}
+                        {% if p != req.requester and p not in req.acceptances %}
+                          <option value="{{ p|e }}">{{ p }}</option>
+                        {% endif %}
+                      {% endfor %}
+                      {% for g in guests %}
+                        {% if g.name != req.requester and g.name not in req.acceptances %}
+                          <option value="{{ g.name|e }}">{{ g.name }} (guest)</option>
+                        {% endif %}
+                      {% endfor %}
+                    </select>
+                    <button type="submit" class="btn">Accept drop-in</button>
+                  </form>
+                  <form method="post" action="{{ url_for('friends_group_drop_in_cancel') }}" onsubmit="return confirm('Cancel this drop-in request?');">
+                    <input type="hidden" name="request_id" value="{{ req.id }}">
+                    <input type="hidden" name="requester" value="{{ req.requester|e }}">
+                    <button type="submit" class="btn btn-secondary di-cancel-btn">Cancel ({{ req.requester }})</button>
+                  </form>
+                </div>
               </div>
-              <div class="di-request-actions">
-                <form method="post" action="{{ url_for('friends_group_drop_in_accept') }}" class="di-accept-form">
-                  <input type="hidden" name="request_id" value="{{ req.id }}">
-                  <select name="accepter" required aria-label="Your name">
-                    <option value="">I'm in — select name</option>
-                    {% for p in player_list %}
-                      {% if p != req.requester and p not in req.acceptances %}
-                        <option value="{{ p|e }}">{{ p }}</option>
-                      {% endif %}
-                    {% endfor %}
-                    {% for g in guests %}
-                      {% if g.name != req.requester and g.name not in req.acceptances %}
-                        <option value="{{ g.name|e }}">{{ g.name }} (guest)</option>
-                      {% endif %}
-                    {% endfor %}
-                  </select>
-                  <button type="submit" class="btn">Accept drop-in</button>
-                </form>
-                <form method="post" action="{{ url_for('friends_group_drop_in_cancel') }}" onsubmit="return confirm('Cancel this drop-in request?');">
-                  <input type="hidden" name="request_id" value="{{ req.id }}">
-                  <input type="hidden" name="requester" value="{{ req.requester|e }}">
-                  <button type="submit" class="btn btn-secondary di-cancel-btn">Cancel ({{ req.requester }})</button>
-                </form>
+
+              <div class="di-generate-section">
+                <button type="button" class="btn btn-secondary di-generate-toggle" data-panel="gen-{{ req.id }}" aria-expanded="{% if active_request_id == req.id or req.has_schedule %}true{% else %}false{% endif %}">
+                  {% if req.has_schedule %}View / regenerate schedule{% else %}Generate schedule{% endif %}
+                </button>
+
+                <div id="gen-{{ req.id }}" class="di-generate-panel" {% if active_request_id != req.id and not req.has_schedule %}hidden{% endif %}>
+                  {% if not req.can_generate %}
+                    <p class="di-hint">Need at least 4 players. Have others accept this drop-in first{% if req.roster|length > 0 %} ({{ 4 - req.roster|length }} more){% endif %}.</p>
+                  {% else %}
+                    <p class="di-hint">Schedule uses everyone in this request: {{ req.roster|join(', ') }}.</p>
+                    <form method="post" action="{{ url_for('drop_in_generate_schedule') }}" class="di-generate-form">
+                      <input type="hidden" name="request_id" value="{{ req.id }}">
+                      {% for p in req.roster %}
+                        <input type="hidden" name="selected_players" value="{{ p|e }}">
+                      {% endfor %}
+                      <label for="num-courts-{{ req.id }}">Number of courts</label>
+                      <input type="number" id="num-courts-{{ req.id }}" name="num_courts" min="1" max="8" value="2" style="width: 4rem;">
+                      <label for="games-{{ req.id }}">Games per court (optional)</label>
+                      <input type="number" id="games-{{ req.id }}" name="games" min="1" max="32" placeholder="e.g. 8" style="width: 5rem;">
+                      <p class="di-hint">Leave games blank for a default rotation.</p>
+                      <label for="time-location-{{ req.id }}">Time &amp; location</label>
+                      <input type="text" id="time-location-{{ req.id }}" name="time_location" value="{{ req.time_location_default|e }}" style="max-width: 22rem;">
+                      <input type="hidden" name="rotate_partners" value="on">
+                      <button type="submit" class="btn">{% if req.has_schedule %}Regenerate schedule{% else %}Generate schedule{% endif %}</button>
+                    </form>
+                  {% endif %}
+
+                  <div class="di-guest-inline">
+                    <button type="button" class="btn btn-secondary di-guest-toggle" data-panel="guest-{{ req.id }}" style="margin-top: 0.75rem;">Add guest</button>
+                    <div id="guest-{{ req.id }}" class="di-form-panel di-guest-panel" hidden>
+                      <form method="post" action="{{ url_for('drop_in_add_guest') }}">
+                        <input type="hidden" name="request_id" value="{{ req.id }}">
+                        {% include "_skill_level_table.html" %}
+                        <label for="guest-name-{{ req.id }}">Guest name</label>
+                        <input type="text" id="guest-name-{{ req.id }}" name="guest_name" placeholder="First Last" maxlength="60" required style="max-width: 14rem;">
+                        <label for="skill-level-{{ req.id }}">Skill level</label>
+                        <select id="skill-level-{{ req.id }}" name="skill_level" required style="max-width: 14rem;">
+                          {% for key, label, rating in skill_level_options %}
+                            <option value="{{ key }}" {% if key == '2.5' %}selected{% endif %}>{{ label }} ({{ rating }} ELO)</option>
+                          {% endfor %}
+                        </select>
+                        <button type="submit" style="margin-top: 0.75rem;">Add guest</button>
+                        <p class="di-hint">After adding, have the guest accept this drop-in above.</p>
+                      </form>
+                    </div>
+                  </div>
+
+                  {% if req.has_schedule and req.schedule %}
+                    <div class="di-inline-schedule">
+                      <h3 class="di-subtitle">Schedule</h3>
+                      <p class="di-schedule-meta">
+                        Generated {{ req.schedule.created_display }}
+                        · Available until {{ req.schedule.expires_display }}
+                      </p>
+                      {% with schedule=req.schedule %}
+                        {% include "_drop_in_schedule_table.html" %}
+                      {% endwith %}
+                    </div>
+                  {% endif %}
+                </div>
               </div>
             </article>
           {% endfor %}
         </div>
       {% else %}
         <p class="di-empty">No open drop-in requests right now.</p>
-      {% endif %}
-
-    {% elif tab == 'generate' %}
-      <h2 class="di-section-title">Generate drop-in schedule</h2>
-      <p class="di-section-sub">Pick who's playing, add guests if needed, and build a rotating-partner schedule. Stays on the Schedule tab for {{ drop_in_schedule_days }} days — view only, no score entry.</p>
-
-      <div class="di-guest-block">
-        <div class="di-guest-header">
-          <h3 class="di-subtitle">Guest players</h3>
-          <button type="button" class="btn btn-secondary" id="guest-toggle" aria-expanded="false" aria-controls="guest-form-panel">Add guest</button>
-        </div>
-        <div id="guest-form-panel" class="di-form-panel" hidden>
-          <form method="post" action="{{ url_for('drop_in_add_guest') }}">
-            {% include "_skill_level_table.html" %}
-            <label for="guest-name">Guest name</label>
-            <input type="text" id="guest-name" name="guest_name" placeholder="First Last" maxlength="60" required style="max-width: 14rem;">
-            <label for="skill-level">Skill level</label>
-            <select id="skill-level" name="skill_level" required style="max-width: 14rem;">
-              {% for key, label, rating in skill_level_options %}
-                <option value="{{ key }}" {% if key == '2.5' %}selected{% endif %}>{{ label }} ({{ rating }} ELO)</option>
-              {% endfor %}
-            </select>
-            <button type="submit" style="margin-top: 0.75rem;">Add guest</button>
-          </form>
-        </div>
-        {% if guests %}
-          <ul class="di-guest-list">
-            {% for g in guests %}
-              <li>
-                <span>{{ g.name }} <span class="di-guest-meta">guest · ELO {{ g.rating }}</span></span>
-                <form method="post" action="{{ url_for('drop_in_remove_guest') }}" style="display: inline;">
-                  <input type="hidden" name="guest_id" value="{{ g.id }}">
-                  <button type="submit" class="btn btn-secondary di-remove-btn">Remove</button>
-                </form>
-              </li>
-            {% endfor %}
-          </ul>
-        {% else %}
-          <p class="di-empty" style="margin-top: 0.5rem;">No guests yet. Use Add guest for someone not on the roster.</p>
-        {% endif %}
-      </div>
-
-      {% if all_players_for_generate %}
-        <form method="post" action="{{ url_for('drop_in_generate_schedule') }}" class="di-generate-form">
-          <label for="created-by">Your name (optional)</label>
-          <select id="created-by" name="created_by" style="max-width: 16rem;">
-            <option value="">—</option>
-            {% for p in player_list %}
-              <option value="{{ p|e }}">{{ p }}</option>
-            {% endfor %}
-          </select>
-
-          <label for="num-courts">Number of courts</label>
-          <input type="number" id="num-courts" name="num_courts" min="1" max="8" value="2" style="width: 4rem;">
-
-          <label for="selected-players">Who is playing?</label>
-          <select id="selected-players" name="selected_players" multiple size="12" style="max-width: 22rem;">
-            {% for p in player_list %}
-              <option value="{{ p|e }}">{{ p }}</option>
-            {% endfor %}
-            {% for g in guests %}
-              <option value="{{ g.name|e }}">{{ g.name }} (guest)</option>
-            {% endfor %}
-          </select>
-          <p class="di-hint">Hold Ctrl (Windows/Linux) or Cmd (Mac) to select multiple players. Need at least 4.</p>
-
-          <label for="games">Games per court (optional)</label>
-          <input type="number" id="games" name="games" min="1" max="32" placeholder="e.g. 8" style="width: 5rem;">
-          <p class="di-hint">Total games = games × courts. Leave blank for a default rotation.</p>
-
-          <label for="time-location">Time &amp; location (optional)</label>
-          <input type="text" id="time-location" name="time_location" placeholder="e.g. 6pm at Green Lake" style="max-width: 20rem;">
-
-          <input type="hidden" name="rotate_partners" value="on">
-          <button type="submit" class="btn">Generate schedule</button>
-        </form>
-      {% else %}
-        <p class="di-empty">Add players in Commish Tool or add a guest above to generate a schedule.</p>
       {% endif %}
 
     {% elif tab == 'schedule' %}
@@ -192,31 +179,11 @@
           <p class="di-schedule-meta"><strong>When / where:</strong> {{ schedule.time_location }}</p>
         {% endif %}
         <p class="di-schedule-meta"><strong>Players:</strong> {{ schedule.players|join(', ') }}</p>
-        <table>
-          <thead>
-            <tr>
-              <th>Court</th>
-              <th>Match</th>
-              <th>Team 1 win chance</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for e in schedule.schedule_entries %}
-              {% if loop.first or e.get('round', 1) != schedule.schedule_entries[loop.index0 - 1].get('round', 1) %}
-                <tr><td colspan="3" style="font-weight: 600; background: var(--surface); padding: 0.5rem 0.75rem;">Round {{ e.get('round', 1) }}{% if e.get('round_bye') %} — Byes: {{ e.round_bye|join(', ') }}{% endif %}</td></tr>
-              {% endif %}
-              <tr>
-                <td>Court {{ e.get('court', 'A') }}</td>
-                <td>{{ e.team1[0] }} & {{ e.team1[1] }} <em>vs</em> {{ e.team2[0] }} & {{ e.team2[1] }}</td>
-                <td>{{ (e.prob * 100)|int }}%</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+        {% include "_drop_in_schedule_table.html" %}
         <p class="di-hint" style="margin-top: 0.75rem;">View only — scores and rankings are not updated from drop-in schedules.</p>
       {% else %}
-        <p class="di-empty">No active drop-in schedule. Generate one on the Generate tab — it will show here for {{ drop_in_schedule_days }} days.</p>
-        <p><a href="{{ url_for('drop_in_page', tab='generate') }}#drop-ins" class="btn">Go to Generate</a></p>
+        <p class="di-empty">No active drop-in schedule yet. Open a request, get players to accept, then generate from that request — schedules stay live for {{ drop_in_schedule_days }} days.</p>
+        <p><a href="{{ url_for('drop_in_page', tab='requests') }}#drop-ins" class="btn">Go to Requests</a></p>
       {% endif %}
     {% endif %}
   </div>
@@ -262,14 +229,15 @@
     }
     .di-section-title { margin: 0 0 0.35rem 0; font-size: 1.15rem; color: var(--accent); }
     .di-section-sub { margin: 0 0 1rem 0; color: var(--muted); font-size: 0.95rem; }
-    .di-subtitle { margin: 0; font-size: 1rem; color: var(--text); }
+    .di-subtitle { margin: 0.75rem 0 0.35rem 0; font-size: 1rem; color: var(--accent); }
     .di-section-header .btn { margin-top: 0; }
     .di-form-panel {
-      background: var(--surface);
+      background: var(--court);
       border: 2px solid var(--court-line);
       border-radius: 10px;
       padding: 1rem 1.15rem;
-      margin-bottom: 1rem;
+      margin-top: 0.75rem;
+      margin-bottom: 0.5rem;
     }
     .di-form-grid {
       display: grid;
@@ -282,12 +250,14 @@
     .di-radio input { width: auto; margin: 0; }
     .di-time-input { max-width: 10rem; margin-top: 0.35rem; margin-bottom: 0.5rem; }
     .di-time-input.is-disabled { opacity: 0.45; pointer-events: none; }
-    .di-request-list { display: flex; flex-direction: column; gap: 0.85rem; }
+    .di-request-list { display: flex; flex-direction: column; gap: 1rem; }
     .di-request-card {
       background: var(--surface);
       border: 2px solid var(--court-line);
       border-radius: 10px;
       padding: 1rem 1.15rem;
+    }
+    .di-request-top {
       display: flex;
       flex-wrap: wrap;
       gap: 1rem;
@@ -296,7 +266,9 @@
     }
     .di-request-main { flex: 1 1 14rem; }
     .di-request-who { margin: 0 0 0.5rem 0; }
-    .di-request-detail, .di-request-joined { margin: 0.2rem 0; font-size: 0.95rem; }
+    .di-request-detail, .di-roster-line { margin: 0.2rem 0; font-size: 0.95rem; }
+    .di-roster-line { margin-top: 0.5rem; color: var(--text); }
+    .di-roster-count { color: var(--muted); font-size: 0.85rem; }
     .di-label {
       color: var(--muted);
       font-size: 0.8rem;
@@ -304,30 +276,22 @@
       letter-spacing: 0.04em;
       margin-right: 0.35rem;
     }
-    .di-request-joined { color: var(--success); margin-top: 0.5rem; }
     .di-request-actions { min-width: 12rem; display: flex; flex-direction: column; gap: 0.5rem; }
     .di-accept-form select { max-width: 100%; margin-top: 0; }
     .di-accept-form .btn { margin-top: 0.5rem; width: 100%; text-align: center; }
     .di-cancel-btn { width: 100%; font-size: 0.85rem; padding: 0.4rem 0.75rem; margin-top: 0; }
+    .di-generate-section {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--court-line);
+    }
+    .di-generate-toggle { margin-top: 0; }
+    .di-generate-panel { margin-top: 0.75rem; }
+    .di-guest-panel { margin-top: 0.5rem; }
+    .di-inline-schedule { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px dashed var(--court-line); }
     .di-empty { color: var(--muted); font-size: 0.95rem; }
-    .di-guest-block {
-      background: var(--surface);
-      border: 2px solid var(--court-line);
-      border-radius: 10px;
-      padding: 1rem 1.15rem;
-      margin-bottom: 1.25rem;
-    }
-    .di-guest-header {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 0.75rem;
-    }
-    .di-guest-header .btn { margin-top: 0; }
     .skill-level-box {
-      background: var(--court);
+      background: var(--bg);
       padding: 0.75rem 1rem;
       border-radius: 6px;
       margin-bottom: 0.75rem;
@@ -335,23 +299,11 @@
     }
     .skill-level-title { margin: 0 0 0.35rem 0; color: var(--muted); font-size: 0.9rem; }
     .skill-level-rows { margin: 0; font-size: 0.9rem; }
-    .di-guest-list { list-style: none; padding: 0; margin: 0; }
-    .di-guest-list li {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.4rem 0;
-      border-bottom: 1px solid var(--court-line);
-    }
-    .di-guest-meta { color: var(--muted); font-size: 0.85rem; }
-    .di-remove-btn { margin: 0; padding: 0.25rem 0.5rem; font-size: 0.8rem; }
     .di-generate-form { margin-top: 0.5rem; }
     .di-hint { color: var(--muted); font-size: 0.85rem; margin: 0.25rem 0 0.75rem 0; }
     .di-schedule-meta { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.5rem 0; }
     @media (max-width: 520px) {
-      .di-request-card { flex-direction: column; align-items: stretch; }
+      .di-request-top { flex-direction: column; align-items: stretch; }
     }
   </style>
   <script>
@@ -380,16 +332,32 @@
       modeInputs.forEach(function(el) { el.addEventListener('change', updateTimeInput); });
       updateTimeInput();
 
-      var guestToggle = document.getElementById('guest-toggle');
-      var guestPanel = document.getElementById('guest-form-panel');
-      if (guestToggle && guestPanel) {
-        guestToggle.addEventListener('click', function() {
+      document.querySelectorAll('.di-generate-toggle').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var panelId = btn.getAttribute('data-panel');
+          var genPanel = document.getElementById(panelId);
+          if (!genPanel) return;
+          var open = genPanel.hidden;
+          genPanel.hidden = !open;
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+      });
+
+      document.querySelectorAll('.di-guest-toggle').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var panelId = btn.getAttribute('data-panel');
+          var guestPanel = document.getElementById(panelId);
+          if (!guestPanel) return;
           var open = guestPanel.hidden;
           guestPanel.hidden = !open;
-          guestToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-          guestToggle.textContent = open ? 'Hide form' : 'Add guest';
+          btn.textContent = open ? 'Hide guest form' : 'Add guest';
         });
-      }
+      });
+
+      {% if active_request_id %}
+      var activeCard = document.getElementById('req-{{ active_request_id }}');
+      if (activeCard) activeCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      {% endif %}
     });
   </script>
 {% endblock %}

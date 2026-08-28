@@ -965,8 +965,21 @@ def active_drop_in_requests():
     return active
 
 
-def format_drop_in_request_display(req):
-    """Add human-readable date/time fields for templates."""
+def drop_in_request_roster(req):
+    """Requester plus everyone who accepted, in join order."""
+    roster = []
+    requester = (req.get("requester") or "").strip()
+    if requester:
+        roster.append(requester)
+    for name in req.get("acceptances") or []:
+        name = (name or "").strip()
+        if name and name not in roster:
+            roster.append(name)
+    return roster
+
+
+def format_drop_in_request_display(req, hub_schedule=None):
+    """Add human-readable date/time fields and roster for templates."""
     play_date = date.fromisoformat(req["play_date"])
     day_display = format_game_day_display(play_date)
     if req.get("time_mode") == "flexible":
@@ -974,11 +987,26 @@ def format_drop_in_request_display(req):
     else:
         time_str = (req.get("time") or "").strip()
         when_display = f"{day_display} at {time_str}" if time_str else day_display
+    roster = drop_in_request_roster(req)
+    time_location_default = (req.get("court") or "").strip()
+    if req.get("time_mode") != "flexible":
+        t = (req.get("time") or "").strip()
+        if t:
+            time_location_default = f"{time_location_default}, {t}" if time_location_default else t
+    has_schedule = bool(
+        hub_schedule and hub_schedule.get("request_id") == req.get("id")
+    )
+    schedule_display = format_drop_in_schedule_display(hub_schedule) if has_schedule else None
     return {
         **req,
         "day_display": day_display,
         "when_display": when_display,
         "acceptances": list(req.get("acceptances") or []),
+        "roster": roster,
+        "can_generate": len(roster) >= 4,
+        "time_location_default": time_location_default,
+        "has_schedule": has_schedule,
+        "schedule": schedule_display,
     }
 
 
@@ -1494,35 +1522,38 @@ def friends_group():
 
 @app.route("/friends-group/drop-in")
 def drop_in_page():
-    """Drop-in hub: requests, guest players, schedule generation, 14-day schedule view."""
+    """Drop-in hub: requests with inline schedule generation, 14-day schedule view."""
     hub = purge_expired_drop_in_hub_schedule()
     guests = hub.get("guests", [])
     player_list = load_players_list()
-    guest_names = {g["name"] for g in guests}
-    drop_in_requests = [format_drop_in_request_display(r) for r in active_drop_in_requests()]
-    schedule = active_drop_in_hub_schedule()
-    schedule_display = format_drop_in_schedule_display(schedule) if schedule else None
+    schedule_raw = active_drop_in_hub_schedule()
+    schedule_display = format_drop_in_schedule_display(schedule_raw) if schedule_raw else None
+    drop_in_requests = [
+        format_drop_in_request_display(r, schedule_raw) for r in active_drop_in_requests()
+    ]
     tab = (request.args.get("tab") or "requests").strip().lower()
-    if tab not in ("requests", "generate", "schedule"):
+    if tab not in ("requests", "schedule"):
         tab = "requests"
-    all_players_for_generate = list(player_list) + [g["name"] for g in guests if g.get("name")]
+    active_request_id = (request.args.get("request") or "").strip()
     return render_template(
         "drop_in.html",
         tab=tab,
         player_list=player_list,
         guests=guests,
-        guest_names=guest_names,
         drop_in_requests=drop_in_requests,
         drop_in_min_date=_drop_in_requests_today().isoformat(),
         schedule=schedule_display,
-        all_players_for_generate=all_players_for_generate,
         skill_level_options=SKILL_LEVEL_OPTIONS,
         drop_in_schedule_days=DROP_IN_SCHEDULE_DAYS,
+        active_request_id=active_request_id,
     )
 
 
-def _drop_in_redirect(tab="requests"):
-    return redirect(url_for("drop_in_page", tab=tab) + "#drop-ins")
+def _drop_in_redirect(tab="requests", request_id=None):
+    url = url_for("drop_in_page", tab=tab)
+    if request_id:
+        url += f"?request={request_id}"
+    return redirect(url + "#drop-ins")
 
 
 @app.route("/friends-group/drop-in-request", methods=["POST"])
@@ -1597,7 +1628,7 @@ def friends_group_drop_in_accept():
     target["acceptances"] = acceptances
     save_drop_in_requests(requests_list)
     flash(f"You're in for {target.get('requester')}'s drop-in.", "success")
-    return _drop_in_redirect()
+    return _drop_in_redirect(request_id=request_id)
 
 
 @app.route("/friends-group/drop-in-cancel", methods=["POST"])
@@ -1628,18 +1659,19 @@ def friends_group_drop_in_cancel():
 def drop_in_add_guest():
     name = request.form.get("guest_name", "").strip()
     skill = request.form.get("skill_level", "").strip()
+    request_id = request.form.get("request_id", "").strip()
     if not name:
         flash("Enter a guest name.", "error")
-        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+        return _drop_in_redirect(request_id=request_id or None)
     if len(name) > 60:
         flash("Guest name is too long.", "error")
-        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+        return _drop_in_redirect(request_id=request_id or None)
     hub = load_drop_in_hub()
     roster = set(load_players_list())
     existing_guests = {g["name"].lower() for g in hub.get("guests", [])}
     if name in roster or name.lower() in existing_guests:
         flash(f"{name} is already on the list.", "error")
-        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+        return _drop_in_redirect(request_id=request_id or None)
     rating = skill_level_rating(skill)
     hub.setdefault("guests", []).append({
         "id": secrets.token_hex(6),
@@ -1649,25 +1681,25 @@ def drop_in_add_guest():
         "added_at": datetime.now(timezone.utc).isoformat(),
     })
     save_drop_in_hub(hub)
-    flash(f"Added guest {name} (ELO {rating}).", "success")
-    return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+    flash(f"Added guest {name} (ELO {rating}). Have them accept the drop-in request to join the game.", "success")
+    return _drop_in_redirect(request_id=request_id or None)
 
 
 @app.route("/friends-group/drop-in/guest/remove", methods=["POST"])
 def drop_in_remove_guest():
     guest_id = request.form.get("guest_id", "").strip()
+    request_id = request.form.get("request_id", "").strip()
     hub = load_drop_in_hub()
     guests = hub.get("guests", [])
     hub["guests"] = [g for g in guests if g.get("id") != guest_id]
     save_drop_in_hub(hub)
     flash("Guest removed.", "success")
-    return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+    return _drop_in_redirect(request_id=request_id or None)
 
 
 @app.route("/friends-group/drop-in/generate", methods=["POST"])
 def drop_in_generate_schedule():
-    created_by = request.form.get("created_by", "").strip()
-    selected = request.form.getlist("selected_players")
+    request_id = request.form.get("request_id", "").strip()
     games_str = request.form.get("games", "").strip()
     time_location = request.form.get("time_location", "").strip()
     num_courts = 2
@@ -1677,13 +1709,29 @@ def drop_in_generate_schedule():
             num_courts = max(1, min(8, int(nc)))
     except ValueError:
         pass
-    rotate_partners = request.form.get("rotate_partners") == "on"
 
-    players = [p.strip() for p in selected if p and p.strip()]
-    players = list(dict.fromkeys(players))
+    if not request_id:
+        flash("Missing drop-in request.", "error")
+        return _drop_in_redirect()
+
+    requests_list = load_drop_in_requests()
+    target = next((r for r in requests_list if r.get("id") == request_id), None)
+    if not target or target.get("status") != "open":
+        flash("That drop-in request is no longer available.", "error")
+        return _drop_in_redirect()
+
+    players = drop_in_request_roster(target)
     if len(players) < 4:
-        flash("Select at least 4 players (roster or guests).", "error")
-        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+        flash("Need at least 4 players — have more people accept the drop-in first.", "error")
+        return _drop_in_redirect(request_id=request_id)
+
+    if not time_location:
+        court = (target.get("court") or "").strip()
+        if target.get("time_mode") != "flexible":
+            t = (target.get("time") or "").strip()
+            time_location = f"{court}, {t}" if court and t else (court or t)
+        else:
+            time_location = court
 
     hub = load_drop_in_hub()
     guests = hub.get("guests", [])
@@ -1691,7 +1739,7 @@ def drop_in_generate_schedule():
     for p in players:
         if p not in allowed:
             flash(f"Unknown player: {p}", "error")
-            return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+            return _drop_in_redirect(request_id=request_id)
 
     games = None
     if games_str:
@@ -1701,10 +1749,6 @@ def drop_in_generate_schedule():
                 games = None
         except ValueError:
             pass
-
-    if not rotate_partners:
-        flash("Drop-in schedules use rotating partners.", "error")
-        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
 
     try:
         rankings = build_drop_in_rankings(players, guests)
@@ -1721,9 +1765,10 @@ def drop_in_generate_schedule():
         now = datetime.now(timezone.utc)
         expires = now + timedelta(days=DROP_IN_SCHEDULE_DAYS)
         hub["schedule"] = {
+            "request_id": request_id,
             "created_at": now.isoformat(),
             "expires_at": expires.isoformat(),
-            "created_by": created_by or "Someone",
+            "created_by": target.get("requester") or "Someone",
             "players": players,
             "schedule_entries": schedule_entries,
             "rankings": dict(rankings),
@@ -1733,10 +1778,10 @@ def drop_in_generate_schedule():
         }
         save_drop_in_hub(hub)
         flash(f"Drop-in schedule ready — visible for {DROP_IN_SCHEDULE_DAYS} days.", "success")
-        return redirect(url_for("drop_in_page", tab="schedule") + "#drop-ins")
+        return _drop_in_redirect(request_id=request_id)
     except ValueError as e:
         flash(str(e), "error")
-        return redirect(url_for("drop_in_page", tab="generate") + "#drop-ins")
+        return _drop_in_redirect(request_id=request_id)
 
 
 @app.route("/commish-tool")
