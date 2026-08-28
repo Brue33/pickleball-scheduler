@@ -5,7 +5,7 @@
   <p>Welcome to Mitten Smash, a friendly pickleball league. We officially play one day a week in doubles, rotating partners and opponents as much as possible. Rankings are calculated per person, but every point matters!</p>
   <p>On Slack you can reach out to coordinate more games with others.</p>
   <p><strong>Next game:</strong> {{ next_game_location_time }}, {{ next_game_date_display }}</p>
-  <p><a href="{{ url_for('friends_group') }}" class="btn" style="margin-top: 0.5rem;">Go to Friends Group</a> — schedule, availability, rankings, and past games.</p>
+  <p><a href="{{ url_for('friends_group') }}" class="btn" style="margin-top: 0.5rem;">Go to Mitten Smash</a> — schedule, availability, rankings, and past games.</p>
   <p><a href="{{ url_for('commish_tool') }}" class="btn btn-secondary" style="margin-top: 0.5rem;">Commish Tool</a> — generate schedules and manage players (password required).</p>
   <form method="post" action="{{ url_for('reset_history') }}" style="margin-top: 1.5rem;" onsubmit="return confirm('Reset partner/opponent history? Rankings will not change.');">
     <label for="reset_history_password">Password (required to reset)</label>

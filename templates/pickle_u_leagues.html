@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Pickle U Leagues — Mitten Smash{% endblock %}
+{% block content %}
+  <header class="pul-header">
+    <h1>Pickle U Leagues</h1>
+    <p class="pul-tagline">League play at Pickle U — standings and schedules by division.</p>
+  </header>
+
+  <nav class="pul-tabs" aria-label="Pickle U leagues">
+    {% for key, info in league_tabs.items() %}
+      <a href="{{ url_for('pickle_u_leagues', tab=key) }}#leagues"
+         class="pul-tab {% if tab == key %}pul-tab-active{% endif %}">
+        {{ info.label }}
+      </a>
+    {% endfor %}
+  </nav>
+
+  <div id="leagues" class="pul-panel">
+    <h2 class="pul-league-title">{{ active_league.title }}</h2>
+    <p class="pul-placeholder">More info to come when the league is announced.</p>
+  </div>
+{% endblock %}
+
+{% block head %}
+  <style>
+    .pul-header { margin-bottom: 1.25rem; }
+    .pul-header h1 { margin-bottom: 0.35rem; }
+    .pul-tagline { color: var(--muted); margin: 0; }
+    .pul-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-bottom: 1.25rem;
+      border-bottom: 2px solid var(--court-line);
+      padding-bottom: 0.5rem;
+      max-width: 52rem;
+    }
+    .pul-tab {
+      padding: 0.45rem 0.85rem;
+      border-radius: 6px 6px 0 0;
+      text-decoration: none;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .pul-tab:hover { color: var(--accent); text-decoration: none; }
+    .pul-tab-active {
+      background: var(--surface);
+      color: var(--accent);
+      border: 2px solid var(--court-line);
+      border-bottom-color: var(--surface);
+      margin-bottom: -2px;
+    }
+    .pul-panel { max-width: 52rem; }
+    .pul-league-title {
+      margin: 0 0 0.75rem 0;
+      font-size: 1.15rem;
+      color: var(--accent);
+    }
+    .pul-placeholder { color: var(--muted); margin: 0; }
+  </style>
+{% endblock %}

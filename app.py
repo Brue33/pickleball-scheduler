@@ -60,6 +60,12 @@ OPEN_DROP_IN_TIME_SLOTS = {
     "any": "Any time",
 }
 
+PICKLE_U_LEAGUE_TABS = {
+    "mens": {"label": "Men's League", "title": "Men's League at Pickle U"},
+    "coed": {"label": "Coed League", "title": "Coed League at Pickle U"},
+    "womens": {"label": "Women's League", "title": "Women's League at Pickle U"},
+}
+
 SKILL_LEVEL_OPTIONS = [
     ("below_2", "Below 2.0", 1000),
     ("2.0", "2.0", 1200),
@@ -1635,9 +1641,18 @@ def mens_league_players_ordered():
     return [(n, MENS_LEAGUE_ROSTER[n]) for n in sorted(MENS_LEAGUE_ROSTER)]
 
 
+@app.route("/pickle-u-leagues")
 @app.route("/mens-league")
-def mens_league():
-    return render_template("mens_league.html")
+def pickle_u_leagues():
+    tab = (request.args.get("tab") or "mens").strip().lower()
+    if tab not in PICKLE_U_LEAGUE_TABS:
+        tab = "mens"
+    return render_template(
+        "pickle_u_leagues.html",
+        tab=tab,
+        league_tabs=PICKLE_U_LEAGUE_TABS,
+        active_league=PICKLE_U_LEAGUE_TABS[tab],
+    )
 
 
 @app.route("/mens-league/standings/unlock", methods=["POST"])
@@ -1645,16 +1660,16 @@ def mens_league_standings_unlock():
     """Unlock weekly standings entry (schedule password)."""
     if request.form.get("password") == SCHEDULE_PASSWORD:
         session["schedule_authenticated"] = True
-        return redirect(url_for("mens_league") + "#enter-week")
+        return redirect(url_for("pickle_u_leagues", tab="mens") + "#enter-week")
     flash("Incorrect password.", "error")
-    return redirect(url_for("mens_league") + "#enter-week")
+    return redirect(url_for("pickle_u_leagues", tab="mens") + "#enter-week")
 
 
 @app.route("/mens-league/standings/week", methods=["POST"])
 def mens_league_add_week():
     if not session.get("schedule_authenticated") and request.form.get("password") != SCHEDULE_PASSWORD:
         flash("Incorrect password. Enter the schedule password to save weekly results.", "error")
-        return redirect(url_for("mens_league") + "#enter-week")
+        return redirect(url_for("pickle_u_leagues", tab="mens") + "#enter-week")
     session["schedule_authenticated"] = True
     week_label = (request.form.get("week_label") or "").strip()
     weeks = load_mens_league_weeks()
@@ -1682,7 +1697,7 @@ def mens_league_add_week():
     weeks.append({"label": week_label, "players": players})
     save_mens_league_weeks(weeks)
     flash(f"Saved {week_label} results. Standings updated.", "success")
-    return redirect(url_for("mens_league") + "#standings")
+    return redirect(url_for("pickle_u_leagues", tab="mens") + "#standings")
 
 
 @app.route("/friends-group")
