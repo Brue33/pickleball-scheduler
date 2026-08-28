@@ -62,6 +62,7 @@ DROP_IN_HUB_FILE = _DATA_DIR / "drop_in_hub.json"
 RESALE_FILE = _DATA_DIR / "pickleball_resale.json"
 RESALE_IMAGES_DIR = _DATA_DIR / "resale_images"
 COURT_BOOKINGS_FILE = _DATA_DIR / "court_bookings.json"
+COURT_IMAGES_DIR = _DATA_DIR / "court_images"
 REPLAY_STARTING_RATINGS_FILE = _DATA_DIR / "replay_starting_ratings.json"
 PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
@@ -2418,7 +2419,6 @@ def pickleball_resale_post():
     seller = request.form.get("seller", "").strip()
     title = request.form.get("title", "").strip()
     price = request.form.get("price", "").strip()
-    image_file = request.files.get("image")
 
     if not seller:
         flash("Please select your name.", "error")
@@ -2429,25 +2429,17 @@ def pickleball_resale_post():
     if not price:
         flash("Please enter a price.", "error")
         return _resale_redirect(tab="post")
-    if not image_file or not image_file.filename:
-        flash("Please upload an image of the item.", "error")
-        return _resale_redirect(tab="post")
-    if not _resale_image_allowed(image_file.filename):
-        flash("Image must be JPG, PNG, GIF, or WebP.", "error")
-        return _resale_redirect(tab="post")
-
-    image_file.stream.seek(0, os.SEEK_END)
-    size = image_file.stream.tell()
-    image_file.stream.seek(0)
-    if size > RESALE_MAX_IMAGE_BYTES:
-        flash("Image must be 5 MB or smaller.", "error")
-        return _resale_redirect(tab="post")
 
     listing_id = secrets.token_hex(8)
-    ext = image_file.filename.rsplit(".", 1)[1].lower()
-    image_name = f"{listing_id}.{ext}"
-    RESALE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-    image_file.save(RESALE_IMAGES_DIR / image_name)
+    image_name = ""
+    image_file, img_err = _validate_upload_image(request.files.get("image"))
+    if img_err:
+        flash(img_err, "error")
+        return _resale_redirect(tab="post")
+    if image_file:
+        image_name = f"{listing_id}.{image_file.filename.rsplit('.', 1)[1].lower()}"
+        RESALE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+        image_file.save(RESALE_IMAGES_DIR / image_name)
 
     listings = load_resale_listings()
     listings.append({
@@ -2619,6 +2611,37 @@ def _court_booking_url_valid(url):
     return url.startswith("http://") or url.startswith("https://")
 
 
+def _validate_upload_image(image_file):
+    """Validate an uploaded image file. Returns (file, error message)."""
+    if not image_file or not image_file.filename:
+        return None, None
+    if not _resale_image_allowed(image_file.filename):
+        return None, "Image must be JPG, PNG, GIF, or WebP."
+    image_file.stream.seek(0, os.SEEK_END)
+    size = image_file.stream.tell()
+    image_file.stream.seek(0)
+    if size > RESALE_MAX_IMAGE_BYTES:
+        return None, "Image must be 5 MB or smaller."
+    return image_file, None
+
+
+def _save_court_image(image_file, court_id):
+    ext = image_file.filename.rsplit(".", 1)[1].lower()
+    image_name = f"{court_id}.{ext}"
+    COURT_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    image_file.save(COURT_IMAGES_DIR / image_name)
+    return image_name
+
+
+def _delete_court_image(image_name):
+    if not image_name:
+        return
+    safe_name = secure_filename(image_name)
+    path = COURT_IMAGES_DIR / safe_name
+    if path.is_file():
+        path.unlink()
+
+
 def format_court_booking_display(court):
     name = (court.get("name") or "").strip()
     city = (court.get("city") or "").strip()
@@ -2635,26 +2658,24 @@ def format_court_booking_display(court):
     bookable = bool(court.get("bookable"))
     booking_url = (court.get("booking_url") or "").strip()
 
-    desc_parts = []
+    card_desc_parts = []
     if city:
-        desc_parts.append(city)
-    if address:
-        desc_parts.append(address)
-    desc_parts.append(io_label)
+        card_desc_parts.append(city)
+    card_desc_parts.append(io_label)
     if num_courts is not None and num_courts != "":
         try:
             n = int(num_courts)
             if n > 0:
-                desc_parts.append(f"{n} court{'s' if n != 1 else ''}")
+                card_desc_parts.append(f"{n} court{'s' if n != 1 else ''}")
         except (TypeError, ValueError):
             pass
     if net_label:
-        desc_parts.append(net_label)
+        card_desc_parts.append(net_label)
     if cost_label:
-        desc_parts.append(cost_label)
+        card_desc_parts.append(cost_label)
 
     if bookable and booking_url:
-        meta = "Book online →"
+        meta = "Bookable online"
         meta_class = "fg-meta-ok"
         external_url = booking_url
     elif bookable:
@@ -2666,16 +2687,53 @@ def format_court_booking_display(court):
         meta_class = "fg-meta-muted"
         external_url = None
 
+    copy_address = ""
+    if address:
+        copy_address = f"{address}, {city}" if city else address
+
+    info_rows = [
+        {"label": "City", "value": city},
+    ]
+    if address:
+        info_rows.append({"label": "Address", "value": address})
+    if num_courts is not None and num_courts != "":
+        try:
+            n = int(num_courts)
+            if n > 0:
+                info_rows.append({"label": "Courts", "value": str(n)})
+        except (TypeError, ValueError):
+            pass
+    info_rows.append({"label": "Type", "value": io_label})
+    if net_label:
+        info_rows.append({"label": "Net style", "value": net_label})
+    if cost_label:
+        info_rows.append({"label": "Cost to book", "value": cost_label})
+    info_rows.append({
+        "label": "Bookable online",
+        "value": "Yes" if bookable else "No",
+    })
+    if bookable and booking_url:
+        info_rows.append({"label": "Booking link", "value": booking_url, "is_link": True})
+
     icon = name[0].upper() if name else "C"
+    image = (court.get("image") or "").strip()
     return {
         **court,
         "name": name,
+        "city": city,
+        "address": address,
         "icon": icon,
-        "desc": " · ".join(desc_parts),
+        "image": image,
+        "image_url": url_for("court_booking_image", filename=image) if image else None,
+        "card_desc": " · ".join(card_desc_parts),
+        "desc": " · ".join(card_desc_parts),
         "meta": meta,
         "meta_class": meta_class,
         "external_url": external_url,
         "bookable": bookable,
+        "has_address": bool(address),
+        "copy_address": copy_address,
+        "info_rows": info_rows,
     }
 
 
@@ -2753,7 +2811,10 @@ def court_bookings_page():
     editing_court_id = (request.args.get("court") or "").strip()
     courts = [
         format_court_booking_display(c)
-        for c in sorted(load_court_bookings(), key=lambda c: (c.get("name") or "").lower())
+        for c in sorted(
+            load_court_bookings(),
+            key=lambda c: ((c.get("city") or "").lower(), (c.get("name") or "").lower()),
+        )
     ]
     editing_court = next((c for c in courts if c.get("id") == editing_court_id), None)
     if editing_court_id and edit_mode and not editing_court:
@@ -2779,10 +2840,19 @@ def court_bookings_add():
     if err:
         flash(err, "error")
         return _court_bookings_redirect(show_add=True)
+    court_id = secrets.token_hex(8)
+    image_name = ""
+    image_file, img_err = _validate_upload_image(request.files.get("image"))
+    if img_err:
+        flash(img_err, "error")
+        return _court_bookings_redirect(show_add=True)
+    if image_file:
+        image_name = _save_court_image(image_file, court_id)
     courts = load_court_bookings()
     courts.append({
-        "id": secrets.token_hex(8),
+        "id": court_id,
         **data,
+        "image": image_name,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     save_court_bookings(courts)
@@ -2826,9 +2896,29 @@ def court_bookings_edit():
         flash("That court could not be found.", "error")
         return _court_bookings_redirect(edit_mode=True)
     target.update(data)
+    image_file, img_err = _validate_upload_image(request.files.get("image"))
+    if img_err:
+        flash(img_err, "error")
+        return _court_bookings_redirect(edit_mode=True, court_id=court_id)
+    if image_file:
+        old_image = (target.get("image") or "").strip()
+        new_image = _save_court_image(image_file, court_id)
+        if old_image and old_image != new_image:
+            _delete_court_image(old_image)
+        target["image"] = new_image
     save_court_bookings(courts)
     flash(f"Updated {data['name']}.", "success")
     return _court_bookings_redirect(edit_mode=True)
+
+
+@app.route("/court-bookings/images/<path:filename>")
+def court_booking_image(filename):
+    safe_name = secure_filename(filename)
+    if not safe_name or safe_name != filename:
+        return "Not found", 404
+    if not (COURT_IMAGES_DIR / safe_name).is_file():
+        return "Not found", 404
+    return send_from_directory(COURT_IMAGES_DIR, safe_name)
 
 
 @app.route("/commish-tool")

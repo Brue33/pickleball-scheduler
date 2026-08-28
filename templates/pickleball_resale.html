@@ -134,8 +134,8 @@
             <input type="text" id="resale-price" name="price" placeholder="e.g. $80 or Best offer" required maxlength="40">
           </div>
           <div>
-            <label for="resale-image">Image</label>
-            <input type="file" id="resale-image" name="image" accept="image/jpeg,image/png,image/gif,image/webp" required>
+            <label for="resale-image">Image <span class="pr-optional">(optional)</span></label>
+            <input type="file" id="resale-image" name="image" accept="image/jpeg,image/png,image/gif,image/webp">
             <p class="pr-hint">JPG, PNG, GIF, or WebP — max 5 MB.</p>
           </div>
         </div>
@@ -263,6 +263,7 @@
       margin-bottom: 0.5rem;
     }
     .pr-hint { color: var(--muted); font-size: 0.85rem; margin: 0.25rem 0 0 0; }
+    .pr-optional { color: var(--muted); font-weight: normal; font-size: 0.85rem; }
     .pr-empty { color: var(--muted); font-size: 0.95rem; }
     input[type="file"] {
       max-width: 24rem;

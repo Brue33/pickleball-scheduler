@@ -35,7 +35,7 @@
 
   <div id="add-court-panel" class="cb-form-panel" {% if not show_add %}hidden{% endif %}>
     <h2 class="cb-form-title">Add a court</h2>
-    <form method="post" action="{{ url_for('court_bookings_add') }}" class="cb-form" data-court-form="add">
+    <form method="post" action="{{ url_for('court_bookings_add') }}" enctype="multipart/form-data" class="cb-form" data-court-form="add">
       <div class="cb-form-grid">
         {% with form_prefix='add', court={} %}
           {% include "_court_form_fields.html" %}
@@ -48,7 +48,7 @@
   {% if edit_mode and editing_court %}
     <div id="edit-court-panel" class="cb-form-panel cb-edit-panel">
       <h2 class="cb-form-title">Edit {{ editing_court.name }}</h2>
-      <form method="post" action="{{ url_for('court_bookings_edit') }}" class="cb-form" data-court-form="edit">
+      <form method="post" action="{{ url_for('court_bookings_edit') }}" enctype="multipart/form-data" class="cb-form" data-court-form="edit">
         <input type="hidden" name="court_id" value="{{ editing_court.id }}">
         <div class="cb-form-grid">
           {% with form_prefix='edit', court=editing_court %}
@@ -66,24 +66,43 @@
       {% if edit_mode %}
         <a href="{{ url_for('court_bookings_page', edit='1', court=court.id) }}#courts"
            class="fg-card {% if editing_court_id == court.id %}fg-card-editing{% endif %}">
-          <span class="fg-card-icon" aria-hidden="true">{{ court.icon }}</span>
+          {% include "_court_card_icon.html" %}
           <h2 class="fg-card-title">{{ court.name }}</h2>
-          <p class="fg-card-desc">{{ court.desc }}</p>
+          <p class="fg-card-desc">{{ court.card_desc }}</p>
           <p class="fg-card-meta fg-meta-muted">Click to edit</p>
         </a>
-      {% elif court.external_url %}
-        <a href="{{ court.external_url }}" class="fg-card" target="_blank" rel="noopener noreferrer">
-          <span class="fg-card-icon" aria-hidden="true">{{ court.icon }}</span>
-          <h2 class="fg-card-title">{{ court.name }}</h2>
-          <p class="fg-card-desc">{{ court.desc }}</p>
-          <p class="fg-card-meta {{ court.meta_class }}">{{ court.meta }}</p>
-        </a>
       {% else %}
-        <article class="fg-card fg-card-static">
-          <span class="fg-card-icon" aria-hidden="true">{{ court.icon }}</span>
+        <article class="fg-card fg-card-court" id="court-card-{{ court.id }}" data-court-id="{{ court.id }}" tabindex="0" role="button" aria-expanded="false">
+          {% include "_court_card_icon.html" %}
           <h2 class="fg-card-title">{{ court.name }}</h2>
-          <p class="fg-card-desc">{{ court.desc }}</p>
+          <p class="fg-card-desc">{{ court.card_desc }}</p>
           <p class="fg-card-meta {{ court.meta_class }}">{{ court.meta }}</p>
+          <div class="cb-card-actions" hidden>
+            {% if court.bookable and court.external_url %}
+              <a href="{{ court.external_url }}" class="btn cb-action-btn" target="_blank" rel="noopener noreferrer">Book court</a>
+            {% endif %}
+            {% if court.has_address %}
+              <button type="button" class="btn btn-secondary cb-action-btn cb-copy-address" data-address="{{ court.copy_address|e }}">Copy address</button>
+            {% endif %}
+            <button type="button" class="btn btn-secondary cb-action-btn cb-show-info" data-court-id="{{ court.id }}">See court info</button>
+          </div>
+          <div id="court-info-{{ court.id }}" class="cb-info-detail" hidden>
+            <h3 class="cb-info-title">{{ court.name }}</h3>
+            <dl class="cb-info-rows">
+              {% for row in court.info_rows %}
+                <div class="cb-info-row">
+                  <dt>{{ row.label }}</dt>
+                  <dd>
+                    {% if row.get('is_link') %}
+                      <a href="{{ row.value }}" target="_blank" rel="noopener noreferrer">{{ row.value }}</a>
+                    {% else %}
+                      {{ row.value }}
+                    {% endif %}
+                  </dd>
+                </div>
+              {% endfor %}
+            </dl>
+          </div>
         </article>
       {% endif %}
     {% endfor %}
@@ -91,6 +110,7 @@
       <p class="cb-empty">No courts listed yet. Add one above.</p>
     {% endif %}
   </div>
+  <div id="cb-copy-toast" class="cb-copy-toast" aria-live="polite">Address copied</div>
 {% endblock %}
 
 {% block head %}
@@ -148,6 +168,58 @@
       color: var(--text);
       transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
     }
+    .fg-card-court {
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      font: inherit;
+    }
+    .fg-card-court.fg-card-open {
+      border-color: var(--accent);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    }
+    .cb-card-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.85rem;
+      padding-top: 0.85rem;
+      border-top: 1px dashed var(--court-line);
+    }
+    .cb-action-btn { margin-top: 0; padding: 0.4rem 0.75rem; font-size: 0.9rem; }
+    .cb-info-detail {
+      margin-top: 0.85rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--court-line);
+    }
+    .cb-info-title { margin: 0 0 0.65rem 0; font-size: 1rem; color: var(--accent); }
+    .cb-info-rows { margin: 0; }
+    .cb-info-row { margin: 0.35rem 0; font-size: 0.9rem; }
+    .cb-info-row dt {
+      display: inline;
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-right: 0.35rem;
+    }
+    .cb-info-row dd { display: inline; margin: 0; color: var(--text); }
+    .cb-copy-toast {
+      position: fixed;
+      bottom: 1.25rem;
+      right: 1.25rem;
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      color: var(--accent);
+      padding: 0.5rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      z-index: 50;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .cb-copy-toast.is-visible { opacity: 1; }
     .fg-card:hover {
       text-decoration: none;
       border-color: var(--accent);
@@ -178,6 +250,25 @@
       border: 2px solid var(--court-line);
       color: var(--accent);
       margin-bottom: 0.65rem;
+    }
+    .fg-card-icon-img {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 2px solid var(--court-line);
+      display: block;
+      margin-bottom: 0.65rem;
+    }
+    .cb-image-block { grid-column: 1 / -1; }
+    .cb-hint { color: var(--muted); font-size: 0.85rem; margin: 0.25rem 0 0 0; }
+    .cb-form-preview {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 2px solid var(--court-line);
+      margin-top: 0.35rem;
     }
     .fg-card-title { margin: 0 0 0.4rem 0; font-size: 1.15rem; color: var(--accent); }
     .fg-card-desc { margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--muted); line-height: 1.45; }
@@ -236,6 +327,96 @@
       });
       ['add', 'edit'].forEach(function(prefix) {
         updateBookingUrl(prefix);
+      });
+
+      var courtCards = document.querySelectorAll('.fg-card-court');
+      function closeAllCourtCards() {
+        courtCards.forEach(function(card) {
+          card.classList.remove('fg-card-open');
+          card.setAttribute('aria-expanded', 'false');
+          var actions = card.querySelector('.cb-card-actions');
+          var info = card.querySelector('.cb-info-detail');
+          if (actions) actions.hidden = true;
+          if (info) info.hidden = true;
+        });
+      }
+      courtCards.forEach(function(card) {
+        card.addEventListener('click', function(e) {
+          if (e.target.closest('.cb-card-actions') || e.target.closest('.cb-info-detail')) return;
+          var actions = card.querySelector('.cb-card-actions');
+          var info = card.querySelector('.cb-info-detail');
+          var wasOpen = card.classList.contains('fg-card-open');
+          closeAllCourtCards();
+          if (!wasOpen) {
+            card.classList.add('fg-card-open');
+            card.setAttribute('aria-expanded', 'true');
+            if (actions) actions.hidden = false;
+          }
+        });
+        card.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            card.click();
+          }
+        });
+      });
+
+      document.querySelectorAll('.cb-show-info').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var courtId = btn.getAttribute('data-court-id');
+          var card = document.getElementById('court-card-' + courtId);
+          if (!card) return;
+          var info = card.querySelector('.cb-info-detail');
+          if (!info) return;
+          var show = info.hidden;
+          document.querySelectorAll('.cb-info-detail').forEach(function(el) { el.hidden = true; });
+          info.hidden = !show;
+          if (!info.hidden) info.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      });
+
+      var toast = document.getElementById('cb-copy-toast');
+      var toastTimer;
+      function showToast(msg) {
+        if (!toast) return;
+        toast.textContent = msg;
+        toast.classList.add('is-visible');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function() { toast.classList.remove('is-visible'); }, 2000);
+      }
+      document.querySelectorAll('.cb-copy-address').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var text = btn.getAttribute('data-address') || '';
+          if (!text) return;
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function() {
+              showToast('Address copied');
+            }).catch(function() { fallbackCopy(text); });
+          } else {
+            fallbackCopy(text);
+          }
+        });
+      });
+      function fallbackCopy(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand('copy');
+          showToast('Address copied');
+        } catch (err) {
+          showToast('Could not copy — select and copy manually');
+        }
+        document.body.removeChild(ta);
+      }
+
+      document.querySelectorAll('.cb-card-actions a, .cb-card-actions button').forEach(function(el) {
+        el.addEventListener('click', function(e) { e.stopPropagation(); });
       });
 
       {% if editing_court_id %}

@@ -62,3 +62,12 @@
   <label for="{{ form_prefix }}-court-url">Booking link</label>
   <input type="url" id="{{ form_prefix }}-court-url" name="booking_url" value="{{ court.get('booking_url', '')|e }}" placeholder="https://…" maxlength="500">
 </div>
+<div class="cb-image-block">
+  <label for="{{ form_prefix }}-court-image">Image <span class="cb-optional">(optional)</span></label>
+  <input type="file" id="{{ form_prefix }}-court-image" name="image" accept="image/jpeg,image/png,image/gif,image/webp">
+  <p class="cb-hint">Shown on the court card instead of the letter icon. JPG, PNG, GIF, or WebP — max 5 MB.</p>
+  {% if court.get('image_url') %}
+    <p class="cb-hint" style="margin-top: 0.5rem;">Current image:</p>
+    <img src="{{ court.image_url }}" alt="" class="cb-form-preview">
+  {% endif %}
+</div>
