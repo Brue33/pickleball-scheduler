@@ -948,11 +948,15 @@ def _drop_in_requests_today():
 
 
 def active_drop_in_requests():
-    """Open requests for today or later, sorted by play date."""
+    """Open requests for today or later without a posted schedule, sorted by play date."""
     today = _drop_in_requests_today()
+    hub = purge_expired_drop_in_schedules()
+    published_ids = set(hub.get("schedules", {}).keys())
     active = []
     for req in load_drop_in_requests():
         if req.get("status") != "open":
+            continue
+        if req.get("id") in published_ids:
             continue
         try:
             play_date = date.fromisoformat(req["play_date"])
