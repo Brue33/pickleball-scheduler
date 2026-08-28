@@ -78,16 +78,14 @@
               <label for="open-court">Court / location</label>
               <input type="text" id="open-court" name="court" placeholder="e.g. Court 2 or Green Lake" required maxlength="80">
             </div>
-            <div class="di-open-days-block">
-              <span class="di-time-label">Days you want to play</span>
-              <div class="di-open-days-grid">
-                {% for day in open_drop_in_days %}
-                  <label class="di-open-day-check">
-                    <input type="checkbox" name="open_days" value="{{ day }}">
-                    {{ day[:3] }}
-                  </label>
-                {% endfor %}
+            <div class="di-open-dates-block">
+              <span class="di-time-label">Dates you want to play</span>
+              <p class="di-hint" style="margin-top: 0.25rem;">Pick a date and click Add date for each day you're available.</p>
+              <div class="di-open-date-add">
+                <input type="date" id="open-date-picker" min="{{ drop_in_min_date }}">
+                <button type="button" class="btn btn-secondary" id="open-date-add-btn">Add date</button>
               </div>
+              <ul id="open-dates-list" class="di-open-dates-list" aria-live="polite"></ul>
             </div>
             <div>
               <label for="open-time-slot">Time</label>
@@ -111,7 +109,7 @@
               <div class="di-open-main">
                 <p class="di-request-who"><strong>{{ open.player }}</strong> is open to drop-in</p>
                 <p class="di-request-detail"><span class="di-label">Court</span> {{ open.court }}</p>
-                <p class="di-request-detail"><span class="di-label">Days</span> {{ open.days_display }}</p>
+                <p class="di-request-detail"><span class="di-label">Dates</span> {{ open.dates_display }}</p>
                 <p class="di-request-detail"><span class="di-label">Time</span> {{ open.time_slot_display }}</p>
               </div>
               <div class="di-open-actions">
@@ -123,8 +121,18 @@
                     <input type="hidden" name="open_id" value="{{ open.id }}">
                     <input type="hidden" name="requester" value="{{ open.player|e }}">
                     <input type="hidden" name="court" value="{{ open.court|e }}">
-                    <label for="convert-date-{{ open.id }}">Pick a date (on one of your days)</label>
-                    <input type="date" id="convert-date-{{ open.id }}" name="play_date" min="{{ drop_in_min_date }}" required>
+                    <label for="convert-date-{{ open.id }}">Pick a date</label>
+                    {% if open.date_options|length == 1 %}
+                      <input type="hidden" name="play_date" value="{{ open.date_options[0].iso }}">
+                      <p class="di-hint" style="margin: 0.25rem 0;">{{ open.date_options[0].display }}</p>
+                    {% else %}
+                      <select id="convert-date-{{ open.id }}" name="play_date" required>
+                        <option value="">Select…</option>
+                        {% for opt in open.date_options %}
+                          <option value="{{ opt.iso }}">{{ opt.display }}</option>
+                        {% endfor %}
+                      </select>
+                    {% endif %}
                     <div class="di-time-block">
                       <span class="di-time-label">Time for this game</span>
                       <label class="di-radio">
@@ -378,21 +386,43 @@
     .di-open-main { flex: 1 1 14rem; }
     .di-open-actions { min-width: 12rem; display: flex; flex-direction: column; gap: 0.5rem; }
     .di-convert-panel { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed var(--court-line); }
-    .di-open-days-block { grid-column: 1 / -1; }
-    .di-open-days-grid {
+    .di-open-dates-block { grid-column: 1 / -1; }
+    .di-open-date-add {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.35rem 0.75rem;
+      gap: 0.5rem;
+      align-items: center;
       margin-top: 0.35rem;
     }
-    .di-open-day-check {
+    .di-open-date-add input[type="date"] { max-width: 11rem; margin: 0; }
+    .di-open-dates-list {
+      list-style: none;
+      margin: 0.5rem 0 0 0;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .di-open-date-chip {
       display: inline-flex;
       align-items: center;
       gap: 0.35rem;
+      background: var(--surface);
+      border: 1px solid var(--court-line);
+      border-radius: 999px;
+      padding: 0.25rem 0.5rem 0.25rem 0.65rem;
       font-size: 0.9rem;
-      color: var(--text);
     }
-    .di-open-day-check input { width: auto; margin: 0; }
+    .di-open-date-remove {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 0 0.15rem;
+    }
+    .di-open-date-remove:hover { color: var(--error); }
     .di-form-panel {
       background: var(--court);
       border: 2px solid var(--court-line);
@@ -535,6 +565,69 @@
           openPanel.hidden = !open;
           openToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
           openToggle.textContent = open ? 'Hide form' : 'Open to drop-in';
+        });
+      }
+
+      var openDatePicker = document.getElementById('open-date-picker');
+      var openDateAddBtn = document.getElementById('open-date-add-btn');
+      var openDatesList = document.getElementById('open-dates-list');
+      var openForm = openPanel ? openPanel.querySelector('form') : null;
+      var openSelectedDates = [];
+
+      function formatOpenDateLabel(iso) {
+        var parts = iso.split('-');
+        if (parts.length !== 3) return iso;
+        var d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        if (isNaN(d.getTime())) return iso;
+        return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      }
+
+      function renderOpenDates() {
+        if (!openDatesList) return;
+        openDatesList.innerHTML = '';
+        openSelectedDates.sort();
+        openSelectedDates.forEach(function(iso) {
+          var li = document.createElement('li');
+          li.className = 'di-open-date-chip';
+          var label = document.createElement('span');
+          label.textContent = formatOpenDateLabel(iso);
+          var hidden = document.createElement('input');
+          hidden.type = 'hidden';
+          hidden.name = 'open_dates';
+          hidden.value = iso;
+          var removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'di-open-date-remove';
+          removeBtn.setAttribute('aria-label', 'Remove ' + iso);
+          removeBtn.textContent = '×';
+          removeBtn.addEventListener('click', function() {
+            openSelectedDates = openSelectedDates.filter(function(d) { return d !== iso; });
+            renderOpenDates();
+          });
+          li.appendChild(label);
+          li.appendChild(hidden);
+          li.appendChild(removeBtn);
+          openDatesList.appendChild(li);
+        });
+      }
+
+      if (openDateAddBtn && openDatePicker) {
+        openDateAddBtn.addEventListener('click', function() {
+          var iso = openDatePicker.value;
+          if (!iso) return;
+          if (openSelectedDates.indexOf(iso) === -1) {
+            openSelectedDates.push(iso);
+            renderOpenDates();
+          }
+          openDatePicker.value = '';
+        });
+      }
+      if (openForm) {
+        openForm.addEventListener('submit', function(e) {
+          if (!openSelectedDates.length) {
+            e.preventDefault();
+            alert('Add at least one date you want to play.');
+          }
         });
       }
 

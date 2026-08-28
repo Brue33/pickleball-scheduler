@@ -53,9 +53,6 @@ PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
 DROP_IN_SCHEDULE_DAYS = 14
 
-OPEN_DROP_IN_DAYS = [
-    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
-]
 OPEN_DROP_IN_TIME_SLOTS = {
     "morning": "Morning",
     "midday": "Mid day",
@@ -989,23 +986,64 @@ def active_drop_in_open_listings():
             continue
         if item.get("status") != "open":
             continue
+        if not _open_listing_future_dates(item):
+            continue
         active.append(item)
     active.sort(key=lambda r: (r.get("player", "").lower(), r.get("created_at", "")))
     return active
 
 
+def _normalize_open_dates(date_strings, min_date=None):
+    """Parse, validate, dedupe, and sort ISO date strings."""
+    if min_date is None:
+        min_date = date.min
+    seen = set()
+    parsed = []
+    for raw in date_strings or []:
+        s = (raw or "").strip()
+        if not s or s in seen:
+            continue
+        try:
+            d = date.fromisoformat(s)
+        except ValueError:
+            continue
+        if d < min_date:
+            continue
+        seen.add(s)
+        parsed.append(d)
+    parsed.sort()
+    return [d.isoformat() for d in parsed]
+
+
+def _open_listing_future_dates(item):
+    """Future play dates for an open listing (ISO strings)."""
+    return _normalize_open_dates(item.get("dates") or [], min_date=_drop_in_requests_today())
+
+
 def format_drop_in_open_display(item):
-    days = [d for d in (item.get("days") or []) if d in OPEN_DROP_IN_DAYS]
+    future_dates = _open_listing_future_dates(item)
     slot_key = item.get("time_slot", "any")
     if slot_key not in OPEN_DROP_IN_TIME_SLOTS:
         slot_key = "any"
     player = (item.get("player") or "").strip()
     time_mode_default, time_default = _drop_in_open_time_defaults(slot_key)
+    date_options = [
+        {
+            "iso": d,
+            "display": format_game_day_display(date.fromisoformat(d)),
+        }
+        for d in future_dates
+    ]
+    if date_options:
+        dates_display = ", ".join(opt["display"] for opt in date_options)
+    else:
+        dates_display = "—"
     return {
         **item,
         "player": player,
-        "days": days,
-        "days_display": ", ".join(days) if days else "—",
+        "dates": future_dates,
+        "dates_display": dates_display,
+        "date_options": date_options,
         "time_slot": slot_key,
         "time_slot_display": OPEN_DROP_IN_TIME_SLOTS[slot_key],
         "time_mode_default": time_mode_default,
@@ -1716,7 +1754,6 @@ def drop_in_page():
         guests=guests,
         drop_in_requests=drop_in_requests,
         drop_in_open_listings=drop_in_open_listings,
-        open_drop_in_days=OPEN_DROP_IN_DAYS,
         open_time_slots=OPEN_DROP_IN_TIME_SLOTS,
         drop_in_min_date=_drop_in_requests_today().isoformat(),
         schedule_list=schedule_list,
@@ -1792,10 +1829,10 @@ def friends_group_drop_in_request():
 
 @app.route("/friends-group/drop-in/open", methods=["POST"])
 def drop_in_open_post():
-    """Post open-to-drop-in availability: name, court, days, time slot."""
+    """Post open-to-drop-in availability: name, court, dates, time slot."""
     player = request.form.get("player", "").strip()
     court = request.form.get("court", "").strip()
-    days = [d for d in request.form.getlist("open_days") if d in OPEN_DROP_IN_DAYS]
+    dates = _normalize_open_dates(request.form.getlist("open_dates"), min_date=_drop_in_requests_today())
     time_slot = request.form.get("time_slot", "any").strip()
     if time_slot not in OPEN_DROP_IN_TIME_SLOTS:
         time_slot = "any"
@@ -1805,8 +1842,8 @@ def drop_in_open_post():
     if not court:
         flash("Please enter a court or location.", "error")
         return _drop_in_redirect()
-    if not days:
-        flash("Select at least one day you're open to play.", "error")
+    if not dates:
+        flash("Add at least one future date you're open to play.", "error")
         return _drop_in_redirect()
     requests_list = load_drop_in_requests()
     requests_list = [r for r in requests_list if not (r.get("type") == "open" and r.get("player") == player)]
@@ -1816,7 +1853,7 @@ def drop_in_open_post():
         "type": "open",
         "player": player,
         "court": court,
-        "days": days,
+        "dates": dates,
         "time_slot": time_slot,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "open",
@@ -1884,9 +1921,9 @@ def drop_in_open_convert():
     if play_date < _drop_in_requests_today():
         flash("Date must be today or in the future.", "error")
         return _drop_in_redirect(open_id=open_id)
-    weekday = play_date.strftime("%A")
-    if weekday not in (target.get("days") or []):
-        flash(f"{weekday} is not one of the days you listed. Pick a date on: {', '.join(target.get('days') or [])}.", "error")
+    allowed_dates = _open_listing_future_dates(target)
+    if play_date.isoformat() not in allowed_dates:
+        flash("Pick one of the dates you listed for this open listing.", "error")
         return _drop_in_redirect(open_id=open_id)
     if time_mode not in ("specific", "flexible"):
         time_mode = "specific"
