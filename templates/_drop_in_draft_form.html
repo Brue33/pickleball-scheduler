@@ -1,0 +1,59 @@
+<form method="post" action="{{ url_for('drop_in_update_draft') }}" id="dropin-draft-{{ draft.request_id }}">
+  <input type="hidden" name="request_id" value="{{ draft.request_id }}">
+  <p class="di-hint">Edit any match using the dropdowns. Update win chances after changes, then Post schedule.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Court</th>
+        <th>Team 1</th>
+        <th>Team 2</th>
+        <th>Win chance</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in draft.schedule_entries %}
+        {% set i = loop.index0 %}
+        {% if loop.first or e.get('round', 1) != draft.schedule_entries[loop.index0 - 1].get('round', 1) %}
+          <tr><td colspan="4" style="font-weight: 600; background: var(--court); padding: 0.5rem 0.75rem;">Round {{ e.get('round', 1) }}{% if e.get('round_bye') %} — Byes: {{ e.round_bye|join(', ') }}{% endif %}</td></tr>
+        {% endif %}
+        <tr>
+          <td>Court {{ e.get('court', 'A') }}</td>
+          <td>
+            <select name="team1_0_{{ i }}" style="max-width: 9rem;">
+              {% for p in draft.players %}
+                <option value="{{ p|e }}" {% if e.team1[0] == p %}selected{% endif %}>{{ p }}</option>
+              {% endfor %}
+            </select>
+            &amp;
+            <select name="team1_1_{{ i }}" style="max-width: 9rem;">
+              {% for p in draft.players %}
+                <option value="{{ p|e }}" {% if e.team1[1] == p %}selected{% endif %}>{{ p }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <select name="team2_0_{{ i }}" style="max-width: 9rem;">
+              {% for p in draft.players %}
+                <option value="{{ p|e }}" {% if e.team2[0] == p %}selected{% endif %}>{{ p }}</option>
+              {% endfor %}
+            </select>
+            &amp;
+            <select name="team2_1_{{ i }}" style="max-width: 9rem;">
+              {% for p in draft.players %}
+                <option value="{{ p|e }}" {% if e.team2[1] == p %}selected{% endif %}>{{ p }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>{{ (e.prob * 100)|int }}%</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p style="margin-top: 1rem;">
+    <button type="submit" formaction="{{ url_for('drop_in_update_draft') }}" class="btn btn-secondary">Update win chances</button>
+  </p>
+  <p style="margin-top: 0.5rem;">
+    <button type="submit" formaction="{{ url_for('drop_in_publish_schedule') }}" class="btn">Post schedule</button>
+    — Makes this schedule live for {{ drop_in_schedule_days }} days.
+  </p>
+</form>

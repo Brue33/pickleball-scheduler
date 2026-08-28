@@ -1,4 +1,5 @@
 {
   "guests": [],
-  "schedule": null
+  "schedules": {},
+  "drafts": {}
 }

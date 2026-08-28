@@ -9,7 +9,7 @@
 
   <nav class="di-tabs" aria-label="Drop-in sections">
     <a href="{{ url_for('drop_in_page', tab='requests') }}#drop-ins" class="di-tab {% if tab == 'requests' %}di-tab-active{% endif %}">Requests{% if drop_in_requests %} ({{ drop_in_requests|length }}){% endif %}</a>
-    <a href="{{ url_for('drop_in_page', tab='schedule') }}#drop-ins" class="di-tab {% if tab == 'schedule' %}di-tab-active{% endif %}">Schedule{% if schedule %} · live{% endif %}</a>
+    <a href="{{ url_for('drop_in_page', tab='schedule') }}#drop-ins" class="di-tab {% if tab == 'schedule' %}di-tab-active{% endif %}">Schedule{% if schedule_list %} ({{ schedule_list|length }}){% endif %}</a>
   </nav>
 
   <div id="drop-ins" class="di-panel">
@@ -101,20 +101,24 @@
               </div>
 
               <div class="di-generate-section">
-                <button type="button" class="btn btn-secondary di-generate-toggle" data-panel="gen-{{ req.id }}" aria-expanded="{% if active_request_id == req.id or req.has_schedule %}true{% else %}false{% endif %}">
-                  {% if req.has_schedule %}View / regenerate schedule{% else %}Generate schedule{% endif %}
+                <button type="button" class="btn btn-secondary di-generate-toggle" data-panel="gen-{{ req.id }}" aria-expanded="{% if active_request_id == req.id or req.has_schedule or req.has_draft %}true{% else %}false{% endif %}">
+                  {% if req.has_draft %}Review draft schedule{% elif req.has_schedule %}View schedule{% else %}Generate schedule{% endif %}
                 </button>
 
-                <div id="gen-{{ req.id }}" class="di-generate-panel" {% if active_request_id != req.id and not req.has_schedule %}hidden{% endif %}>
-                  {% if not req.can_generate %}
+                <div id="gen-{{ req.id }}" class="di-generate-panel" {% if active_request_id != req.id and not req.has_schedule and not req.has_draft %}hidden{% endif %}>
+                  {% if req.has_draft and req.draft %}
+                    <div class="di-draft-block">
+                      <h3 class="di-subtitle">Draft — not posted yet</h3>
+                      {% with draft=req.draft %}
+                        {% include "_drop_in_draft_form.html" %}
+                      {% endwith %}
+                    </div>
+                  {% elif not req.can_generate %}
                     <p class="di-hint">Need at least 4 players. Have others accept this drop-in first{% if req.roster|length > 0 %} ({{ 4 - req.roster|length }} more){% endif %}.</p>
-                  {% else %}
+                  {% elif not req.has_schedule %}
                     <p class="di-hint">Schedule uses everyone in this request: {{ req.roster|join(', ') }}.</p>
                     <form method="post" action="{{ url_for('drop_in_generate_schedule') }}" class="di-generate-form">
                       <input type="hidden" name="request_id" value="{{ req.id }}">
-                      {% for p in req.roster %}
-                        <input type="hidden" name="selected_players" value="{{ p|e }}">
-                      {% endfor %}
                       <label for="num-courts-{{ req.id }}">Number of courts</label>
                       <input type="number" id="num-courts-{{ req.id }}" name="num_courts" min="1" max="8" value="2" style="width: 4rem;">
                       <label for="games-{{ req.id }}">Games per court (optional)</label>
@@ -123,7 +127,7 @@
                       <label for="time-location-{{ req.id }}">Time &amp; location</label>
                       <input type="text" id="time-location-{{ req.id }}" name="time_location" value="{{ req.time_location_default|e }}" style="max-width: 22rem;">
                       <input type="hidden" name="rotate_partners" value="on">
-                      <button type="submit" class="btn">{% if req.has_schedule %}Regenerate schedule{% else %}Generate schedule{% endif %}</button>
+                      <button type="submit" class="btn">Generate schedule</button>
                     </form>
                   {% endif %}
 
@@ -147,16 +151,29 @@
                     </div>
                   </div>
 
-                  {% if req.has_schedule and req.schedule %}
+                  {% if req.has_schedule and req.schedule and not req.has_draft %}
                     <div class="di-inline-schedule">
-                      <h3 class="di-subtitle">Schedule</h3>
+                      <h3 class="di-subtitle">{{ req.schedule_label }}</h3>
                       <p class="di-schedule-meta">
-                        Generated {{ req.schedule.created_display }}
+                        Posted {{ req.schedule.created_display }}
                         · Available until {{ req.schedule.expires_display }}
                       </p>
+                      <p><a href="{{ url_for('drop_in_page', tab='schedule', schedule=req.id) }}#drop-ins" class="btn btn-secondary" style="margin-top: 0;">Open on Schedule tab</a></p>
                       {% with schedule=req.schedule %}
                         {% include "_drop_in_schedule_table.html" %}
                       {% endwith %}
+                      <p class="di-hint" style="margin-top: 0.5rem;">To change players, generate a new draft above (after clearing — regenerate replaces the posted schedule when you post again).</p>
+                      {% if req.can_generate %}
+                        <form method="post" action="{{ url_for('drop_in_generate_schedule') }}" class="di-generate-form" style="margin-top: 0.75rem;">
+                          <input type="hidden" name="request_id" value="{{ req.id }}">
+                          <label for="regen-courts-{{ req.id }}">Regenerate with</label>
+                          <input type="number" id="regen-courts-{{ req.id }}" name="num_courts" min="1" max="8" value="2" style="width: 4rem;">
+                          <span style="color: var(--muted); font-size: 0.9rem;"> courts</span>
+                          <input type="hidden" name="time_location" value="{{ req.time_location_default|e }}">
+                          <input type="hidden" name="rotate_partners" value="on">
+                          <button type="submit" class="btn btn-secondary" style="margin-left: 0.5rem;">Regenerate draft</button>
+                        </form>
+                      {% endif %}
                     </div>
                   {% endif %}
                 </div>
@@ -169,20 +186,32 @@
       {% endif %}
 
     {% elif tab == 'schedule' %}
-      <h2 class="di-section-title">Drop-in schedule</h2>
-      {% if schedule %}
-        <p class="di-schedule-meta">
-          Generated {{ schedule.created_display }}{% if schedule.created_by %} by {{ schedule.created_by }}{% endif %}
-          · Available until {{ schedule.expires_display }}
-        </p>
-        {% if schedule.get('time_location') %}
-          <p class="di-schedule-meta"><strong>When / where:</strong> {{ schedule.time_location }}</p>
+      <h2 class="di-section-title">Drop-in schedules</h2>
+      {% if schedule_list %}
+        <div class="di-schedule-picker">
+          {% for s in schedule_list %}
+            <a href="{{ url_for('drop_in_page', tab='schedule', schedule=s.request_id) }}#drop-ins"
+               class="di-schedule-pick-btn {% if selected_schedule_id == s.request_id %}di-schedule-pick-active{% endif %}">
+              {{ s.label }}
+            </a>
+          {% endfor %}
+        </div>
+        {% if schedule %}
+          <p class="di-schedule-meta">
+            Posted {{ schedule.created_display }}
+            · Available until {{ schedule.expires_display }}
+          </p>
+          {% if schedule.get('time_location') %}
+            <p class="di-schedule-meta"><strong>When / where:</strong> {{ schedule.time_location }}</p>
+          {% endif %}
+          <p class="di-schedule-meta"><strong>Players:</strong> {{ schedule.players|join(', ') }}</p>
+          {% include "_drop_in_schedule_table.html" %}
+          <p class="di-hint" style="margin-top: 0.75rem;">View only — scores and rankings are not updated from drop-in schedules.</p>
+        {% elif schedule_list|length > 1 %}
+          <p class="di-hint">Choose a schedule above.</p>
         {% endif %}
-        <p class="di-schedule-meta"><strong>Players:</strong> {{ schedule.players|join(', ') }}</p>
-        {% include "_drop_in_schedule_table.html" %}
-        <p class="di-hint" style="margin-top: 0.75rem;">View only — scores and rankings are not updated from drop-in schedules.</p>
       {% else %}
-        <p class="di-empty">No active drop-in schedule yet. Open a request, get players to accept, then generate from that request — schedules stay live for {{ drop_in_schedule_days }} days.</p>
+        <p class="di-empty">No active drop-in schedules yet. Open a request, get players to accept, generate a schedule, and post it — schedules stay live for {{ drop_in_schedule_days }} days.</p>
         <p><a href="{{ url_for('drop_in_page', tab='requests') }}#drop-ins" class="btn">Go to Requests</a></p>
       {% endif %}
     {% endif %}
@@ -302,6 +331,30 @@
     .di-generate-form { margin-top: 0.5rem; }
     .di-hint { color: var(--muted); font-size: 0.85rem; margin: 0.25rem 0 0.75rem 0; }
     .di-schedule-meta { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.5rem 0; }
+    .di-schedule-picker {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .di-schedule-pick-btn {
+      display: inline-block;
+      padding: 0.45rem 0.85rem;
+      border-radius: 6px;
+      border: 2px solid var(--court-line);
+      background: var(--surface);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .di-schedule-pick-btn:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+    .di-schedule-pick-active {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+    }
+    .di-draft-block { margin-top: 0.5rem; }
     @media (max-width: 520px) {
       .di-request-top { flex-direction: column; align-items: stretch; }
     }

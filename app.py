@@ -978,8 +978,9 @@ def drop_in_request_roster(req):
     return roster
 
 
-def format_drop_in_request_display(req, hub_schedule=None):
+def format_drop_in_request_display(req, hub=None):
     """Add human-readable date/time fields and roster for templates."""
+    hub = _normalize_drop_in_hub(hub or load_drop_in_hub())
     play_date = date.fromisoformat(req["play_date"])
     day_display = format_game_day_display(play_date)
     if req.get("time_mode") == "flexible":
@@ -993,10 +994,22 @@ def format_drop_in_request_display(req, hub_schedule=None):
         t = (req.get("time") or "").strip()
         if t:
             time_location_default = f"{time_location_default}, {t}" if time_location_default else t
-    has_schedule = bool(
-        hub_schedule and hub_schedule.get("request_id") == req.get("id")
-    )
-    schedule_display = format_drop_in_schedule_display(hub_schedule) if has_schedule else None
+    rid = req.get("id")
+    has_schedule = rid in hub.get("schedules", {})
+    schedule_display = None
+    if has_schedule:
+        sched = dict(hub["schedules"][rid])
+        players = sched.get("players") or []
+        add_round_court_and_bye(sched["schedule_entries"], players, sched.get("num_courts"))
+        schedule_display = format_drop_in_schedule_display(sched)
+        if schedule_display:
+            schedule_display["label"] = drop_in_schedule_label(req)
+    has_draft = rid in hub.get("drafts", {})
+    draft_display = None
+    if has_draft:
+        draft_display = dict(hub["drafts"][rid])
+        players = draft_display.get("players") or []
+        add_round_court_and_bye(draft_display["schedule_entries"], players, draft_display.get("num_courts"))
     return {
         **req,
         "day_display": day_display,
@@ -1005,8 +1018,11 @@ def format_drop_in_request_display(req, hub_schedule=None):
         "roster": roster,
         "can_generate": len(roster) >= 4,
         "time_location_default": time_location_default,
+        "schedule_label": drop_in_schedule_label(req),
         "has_schedule": has_schedule,
+        "has_draft": has_draft,
         "schedule": schedule_display,
+        "draft": draft_display,
     }
 
 
@@ -1018,7 +1034,7 @@ def skill_level_rating(skill_key):
 
 
 def load_drop_in_hub():
-    default = {"guests": [], "schedule": None}
+    default = {"guests": [], "schedules": {}, "drafts": {}}
     if not DROP_IN_HUB_FILE.exists():
         return default
     try:
@@ -1026,11 +1042,25 @@ def load_drop_in_hub():
             data = json.load(f)
         if not isinstance(data, dict):
             return default
-        data.setdefault("guests", [])
-        data.setdefault("schedule", None)
-        return data
+        return _normalize_drop_in_hub(data)
     except (json.JSONDecodeError, OSError):
         return default
+
+
+def _normalize_drop_in_hub(hub):
+    hub.setdefault("guests", [])
+    hub.setdefault("schedules", {})
+    hub.setdefault("drafts", {})
+    legacy = hub.pop("schedule", None)
+    if legacy and isinstance(legacy, dict):
+        rid = legacy.get("request_id")
+        if rid and rid not in hub["schedules"]:
+            hub["schedules"][rid] = legacy
+    if not isinstance(hub["schedules"], dict):
+        hub["schedules"] = {}
+    if not isinstance(hub["drafts"], dict):
+        hub["drafts"] = {}
+    return hub
 
 
 def save_drop_in_hub(data):
@@ -1045,31 +1075,101 @@ def _parse_iso_utc(iso_str):
     return dt
 
 
-def purge_expired_drop_in_hub_schedule(hub=None):
-    hub = hub if hub is not None else load_drop_in_hub()
-    sched = hub.get("schedule")
-    if not sched:
-        return hub
-    expires_at = sched.get("expires_at")
-    if not expires_at:
-        return hub
-    try:
-        if datetime.now(timezone.utc) > _parse_iso_utc(expires_at):
-            hub["schedule"] = None
-            save_drop_in_hub(hub)
-    except (ValueError, TypeError):
-        pass
+def purge_expired_drop_in_schedules(hub=None):
+    hub = _normalize_drop_in_hub(hub if hub is not None else load_drop_in_hub())
+    now = datetime.now(timezone.utc)
+    changed = False
+    for rid, sched in list(hub.get("schedules", {}).items()):
+        expires_at = sched.get("expires_at") if isinstance(sched, dict) else None
+        if not expires_at:
+            continue
+        try:
+            if now > _parse_iso_utc(expires_at):
+                del hub["schedules"][rid]
+                changed = True
+        except (ValueError, TypeError):
+            pass
+    if changed:
+        save_drop_in_hub(hub)
     return hub
 
 
+def drop_in_schedule_label(req):
+    """Label for schedule picker: requester and game date."""
+    requester = (req.get("requester") or req.get("created_by") or "Someone").strip()
+    try:
+        day = format_game_day_display(date.fromisoformat(req["play_date"]))
+    except (ValueError, TypeError, KeyError):
+        day = (req.get("when_display") or "Unknown date").strip()
+    return f"{requester} — {day}"
+
+
+def _drop_in_request_for_schedule(sched, requests_by_id):
+    rid = sched.get("request_id")
+    req = requests_by_id.get(rid) if rid else None
+    if req:
+        return req
+    return {
+        "id": rid,
+        "requester": sched.get("requester") or sched.get("created_by") or "Someone",
+        "play_date": sched.get("play_date") or "",
+        "when_display": sched.get("when_display", ""),
+    }
+
+
+def active_drop_in_schedules_list():
+    """Published drop-in schedules that have not expired, newest first."""
+    hub = purge_expired_drop_in_schedules()
+    requests_by_id = {r["id"]: r for r in load_drop_in_requests()}
+    results = []
+    for rid, sched in hub.get("schedules", {}).items():
+        if not isinstance(sched, dict) or not sched.get("schedule_entries"):
+            continue
+        sched_copy = dict(sched)
+        sched_copy["request_id"] = rid
+        players = sched_copy.get("players") or []
+        add_round_court_and_bye(sched_copy["schedule_entries"], players, sched_copy.get("num_courts"))
+        display = format_drop_in_schedule_display(sched_copy)
+        if not display:
+            continue
+        req = _drop_in_request_for_schedule(sched_copy, requests_by_id)
+        display["label"] = drop_in_schedule_label(req)
+        display["request_id"] = rid
+        results.append(display)
+    results.sort(key=lambda s: s.get("created_at", ""), reverse=True)
+    return results
+
+
 def active_drop_in_hub_schedule():
-    hub = purge_expired_drop_in_hub_schedule()
-    sched = hub.get("schedule")
-    if not sched or not isinstance(sched.get("schedule_entries"), list):
+    """Return first active schedule (legacy helper). Prefer active_drop_in_schedules_list."""
+    schedules = active_drop_in_schedules_list()
+    return schedules[0] if schedules else None
+
+
+def get_drop_in_draft(request_id):
+    hub = _normalize_drop_in_hub(load_drop_in_hub())
+    draft = hub.get("drafts", {}).get(request_id)
+    if not draft:
         return None
-    players = sched.get("players") or []
-    add_round_court_and_bye(sched["schedule_entries"], players, sched.get("num_courts"))
-    return sched
+    draft = dict(draft)
+    players = draft.get("players") or []
+    add_round_court_and_bye(draft["schedule_entries"], players, draft.get("num_courts"))
+    return draft
+
+
+def _drop_in_find_request(request_id):
+    return next((r for r in load_drop_in_requests() if r.get("id") == request_id), None)
+
+
+def _drop_in_save_draft_entries(hub, request_id, draft):
+    entries, err = _parse_draft_entries_from_form(draft, rankings=draft.get("rankings"))
+    if err:
+        return err
+    draft["schedule_entries"] = entries
+    add_round_court_and_bye(draft["schedule_entries"], draft["players"], draft.get("num_courts"))
+    hub["drafts"][request_id] = draft
+    save_drop_in_hub(hub)
+    return None
 
 
 def drop_in_hub_guest_names(hub=None):
@@ -1505,7 +1605,7 @@ def friends_group():
     points_board_ranked, _ = split_ranked_points_leaderboard(points_stats)
     top_ranked = points_board_ranked[0][0] if points_board_ranked else None
     player_list = load_players_list()
-    drop_in_has_schedule = bool(active_drop_in_hub_schedule())
+    drop_in_has_schedule = bool(active_drop_in_schedules_list())
     return render_template(
         "friends_group.html",
         next_game_date_display=next_game_date_display,
@@ -1523,18 +1623,24 @@ def friends_group():
 @app.route("/friends-group/drop-in")
 def drop_in_page():
     """Drop-in hub: requests with inline schedule generation, 14-day schedule view."""
-    hub = purge_expired_drop_in_hub_schedule()
+    hub = purge_expired_drop_in_schedules()
     guests = hub.get("guests", [])
     player_list = load_players_list()
-    schedule_raw = active_drop_in_hub_schedule()
-    schedule_display = format_drop_in_schedule_display(schedule_raw) if schedule_raw else None
+    schedule_list = active_drop_in_schedules_list()
     drop_in_requests = [
-        format_drop_in_request_display(r, schedule_raw) for r in active_drop_in_requests()
+        format_drop_in_request_display(r, hub) for r in active_drop_in_requests()
     ]
     tab = (request.args.get("tab") or "requests").strip().lower()
     if tab not in ("requests", "schedule"):
         tab = "requests"
     active_request_id = (request.args.get("request") or "").strip()
+    selected_schedule_id = (request.args.get("schedule") or "").strip()
+    if tab == "schedule" and not selected_schedule_id and len(schedule_list) == 1:
+        selected_schedule_id = schedule_list[0]["request_id"]
+    schedule = next(
+        (s for s in schedule_list if s.get("request_id") == selected_schedule_id),
+        None,
+    )
     return render_template(
         "drop_in.html",
         tab=tab,
@@ -1542,17 +1648,24 @@ def drop_in_page():
         guests=guests,
         drop_in_requests=drop_in_requests,
         drop_in_min_date=_drop_in_requests_today().isoformat(),
-        schedule=schedule_display,
+        schedule_list=schedule_list,
+        schedule=schedule,
+        selected_schedule_id=selected_schedule_id,
         skill_level_options=SKILL_LEVEL_OPTIONS,
         drop_in_schedule_days=DROP_IN_SCHEDULE_DAYS,
         active_request_id=active_request_id,
     )
 
 
-def _drop_in_redirect(tab="requests", request_id=None):
+def _drop_in_redirect(tab="requests", request_id=None, schedule_id=None):
     url = url_for("drop_in_page", tab=tab)
+    params = []
     if request_id:
-        url += f"?request={request_id}"
+        params.append(f"request={request_id}")
+    if schedule_id:
+        params.append(f"schedule={schedule_id}")
+    if params:
+        url += "?" + "&".join(params)
     return redirect(url + "#drop-ins")
 
 
@@ -1762,13 +1875,12 @@ def drop_in_generate_schedule():
         lines = format_schedule(schedule_list, rankings, players=players)
         schedule_entries = build_schedule_entries_from_list(schedule_list, rankings, players, lines)
         add_round_court_and_bye(schedule_entries, players, num_courts=num_courts)
-        now = datetime.now(timezone.utc)
-        expires = now + timedelta(days=DROP_IN_SCHEDULE_DAYS)
-        hub["schedule"] = {
+        hub["drafts"][request_id] = {
             "request_id": request_id,
-            "created_at": now.isoformat(),
-            "expires_at": expires.isoformat(),
             "created_by": target.get("requester") or "Someone",
+            "requester": target.get("requester") or "Someone",
+            "play_date": target.get("play_date") or "",
+            "when_display": format_drop_in_request_display(target, hub).get("when_display", ""),
             "players": players,
             "schedule_entries": schedule_entries,
             "rankings": dict(rankings),
@@ -1777,11 +1889,59 @@ def drop_in_generate_schedule():
             "rotate_partners": True,
         }
         save_drop_in_hub(hub)
-        flash(f"Drop-in schedule ready — visible for {DROP_IN_SCHEDULE_DAYS} days.", "success")
+        flash("Review the schedule below — edit matchups, update win chances, then Post schedule.", "success")
         return _drop_in_redirect(request_id=request_id)
     except ValueError as e:
         flash(str(e), "error")
         return _drop_in_redirect(request_id=request_id)
+
+
+@app.route("/friends-group/drop-in/draft/update", methods=["POST"])
+def drop_in_update_draft():
+    request_id = request.form.get("request_id", "").strip()
+    if not request_id:
+        flash("Missing drop-in request.", "error")
+        return _drop_in_redirect()
+    hub = _normalize_drop_in_hub(load_drop_in_hub())
+    draft = hub.get("drafts", {}).get(request_id)
+    if not draft:
+        flash("No draft to update. Generate a schedule first.", "error")
+        return _drop_in_redirect(request_id=request_id)
+    err = _drop_in_save_draft_entries(hub, request_id, dict(draft))
+    if err:
+        flash(err, "error")
+        return _drop_in_redirect(request_id=request_id)
+    flash("Win chances updated.", "success")
+    return _drop_in_redirect(request_id=request_id)
+
+
+@app.route("/friends-group/drop-in/draft/publish", methods=["POST"])
+def drop_in_publish_schedule():
+    request_id = request.form.get("request_id", "").strip()
+    if not request_id:
+        flash("Missing drop-in request.", "error")
+        return _drop_in_redirect()
+    hub = _normalize_drop_in_hub(load_drop_in_hub())
+    draft = hub.get("drafts", {}).get(request_id)
+    if not draft:
+        flash("No draft to post. Generate a schedule first.", "error")
+        return _drop_in_redirect(request_id=request_id)
+    err = _drop_in_save_draft_entries(hub, request_id, dict(draft))
+    if err:
+        flash(err, "error")
+        return _drop_in_redirect(request_id=request_id)
+    hub = _normalize_drop_in_hub(load_drop_in_hub())
+    draft = hub["drafts"].pop(request_id)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=DROP_IN_SCHEDULE_DAYS)
+    hub["schedules"][request_id] = {
+        **draft,
+        "created_at": now.isoformat(),
+        "expires_at": expires.isoformat(),
+    }
+    save_drop_in_hub(hub)
+    flash(f"Schedule posted — visible for {DROP_IN_SCHEDULE_DAYS} days.", "success")
+    return _drop_in_redirect(tab="schedule", schedule_id=request_id)
 
 
 @app.route("/commish-tool")
@@ -2776,7 +2936,7 @@ def export_drop_in_requests():
 def export_drop_in_hub():
     if not _export_key_valid():
         return jsonify({"error": "Forbidden"}), 403
-    return jsonify(purge_expired_drop_in_hub_schedule())
+    return jsonify(purge_expired_drop_in_schedules())
 
 
 @app.route("/export/mens_league_standings")
