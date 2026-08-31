@@ -1,6 +1,6 @@
-<form method="post" action="{{ url_for('player_profile_page', player=player) }}" class="pp-edit-form">
+<form method="post" action="{{ url_for('player_profile_page', player=player) }}" class="pp-edit-form" enctype="multipart/form-data">
   <input type="hidden" name="player" value="{{ player|e }}">
-  {% with form_prefix='edit', profile=profile %}
+  {% with form_prefix='edit', profile=profile, spouse_choices=spouse_choices %}
     {% include "_player_profile_fields.html" %}
   {% endwith %}
   <label for="confirm-name">Your name (to edit this profile)</label>

@@ -1,0 +1,5 @@
+{% if profile.image_url %}
+  <img src="{{ profile.image_url }}" alt="" class="fg-card-icon-img">
+{% else %}
+  <span class="fg-card-icon" aria-hidden="true">{{ profile.icon }}</span>
+{% endif %}

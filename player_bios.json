@@ -5,14 +5,15 @@
   "Bryan R": {
     "first_name": "Bryan",
     "last_initial": "R",
-    "skill": "3.5",
-    "location": "West side of Traverse City",
-    "paddle": "Ace Paddle",
-    "handedness": "Right",
-    "favorite_ball": "Selkirk Pro SL1",
+    "skill": "",
+    "location": "",
+    "paddle": "",
+    "handedness": "",
+    "favorite_ball": "",
     "preferred_courts": [],
-    "open_to_drop_in": "Yes",
-    "slack_workspace": "Yes"
+    "open_to_drop_in": "",
+    "slack_workspace": "",
+    "spouse": ""
   },
   "Cailin M": {
     "legacy_bio": "Cailin has been playing and is a right-handed player who plays both sides of the court. She uses an Ace Pickleball Paddle. She is located on the east side of town."

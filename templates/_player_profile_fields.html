@@ -1,6 +1,7 @@
 {% set prefix = form_prefix|default('profile') %}
 {% set p = profile if profile is defined else {} %}
 {% set courts = court_choices if court_choices is defined else court_location_list() %}
+{% set spouse_options = spouse_choices if spouse_choices is defined else [] %}
 {% set selected_courts = p.get('_courts_checked', []) %}
 {% set other_court = p.get('_court_other', '') %}
 
@@ -14,6 +15,16 @@
       <label for="{{ prefix }}-last-initial">Last initial</label>
       <input type="text" id="{{ prefix }}-last-initial" name="last_initial" value="{{ p.get('last_initial', '')|e }}" placeholder="e.g. R" maxlength="1" required style="max-width: 4rem;">
     </div>
+  </div>
+
+  <div>
+    <label for="{{ prefix }}-spouse">Spouse</label>
+    <select id="{{ prefix }}-spouse" name="spouse" style="max-width: 16rem;">
+      <option value="">Select…</option>
+      {% for person in spouse_options %}
+        <option value="{{ person|e }}" {% if p.get('spouse') == person %}selected{% endif %}>{{ person }}</option>
+      {% endfor %}
+    </select>
   </div>
 
   <div>
@@ -91,5 +102,15 @@
         <option value="{{ option }}" {% if p.get('slack_workspace') == option %}selected{% endif %}>{{ option }}</option>
       {% endfor %}
     </select>
+  </div>
+
+  <div class="pp-image-block">
+    <label for="{{ prefix }}-profile-image">Profile picture <span class="pp-optional">(optional)</span></label>
+    <input type="file" id="{{ prefix }}-profile-image" name="image" accept="image/jpeg,image/png,image/gif,image/webp">
+    <p class="pp-field-hint">Shown on the profile card instead of the letter icon. JPG, PNG, GIF, or WebP — max 5 MB.</p>
+    {% if p.get('image_url') %}
+      <p class="pp-field-hint" style="margin-top: 0.5rem;">Current photo:</p>
+      <img src="{{ p.image_url }}" alt="" class="pp-form-preview">
+    {% endif %}
   </div>
 </div>

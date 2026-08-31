@@ -5,7 +5,11 @@
 
   <article class="pp-profile-card">
     <header class="pp-view-header">
-      <span class="pp-avatar" aria-hidden="true">{{ player[0]|upper }}</span>
+      {% if profile.image_url %}
+        <img src="{{ profile.image_url }}" alt="" class="pp-avatar-img">
+      {% else %}
+        <span class="pp-avatar" aria-hidden="true">{{ player[0]|upper }}</span>
+      {% endif %}
       <h1>{{ profile_formatted_name(profile, player) }}</h1>
     </header>
 
@@ -16,7 +20,13 @@
             {% for row in info_rows %}
               <div class="pp-info-row">
                 <dt>{{ row.label }}</dt>
-                <dd>{{ row.value }}</dd>
+                <dd>
+                  {% if row.get('player') %}
+                    <a href="{{ url_for('player_profile_page', player=row.player) }}">{{ row.value }}</a>
+                  {% else %}
+                    {{ row.value }}
+                  {% endif %}
+                </dd>
               </div>
             {% endfor %}
           </dl>
@@ -70,6 +80,14 @@
       color: var(--accent);
       font-size: 1.25rem;
       font-weight: 700;
+      flex-shrink: 0;
+    }
+    .pp-avatar-img {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 10px;
+      object-fit: cover;
+      border: 2px solid var(--court-line);
       flex-shrink: 0;
     }
     .pp-info-panel { margin-bottom: 1rem; }
@@ -186,6 +204,17 @@
     .pp-skill-list li { margin-bottom: 0.45rem; }
     .pp-skill-list span { color: var(--muted); }
     .pp-skill-close { margin-top: 0; }
+    .pp-image-block { margin-top: 0.25rem; }
+    .pp-optional { color: var(--muted); font-weight: 400; font-size: 0.85rem; }
+    .pp-form-preview {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 2px solid var(--court-line);
+      display: block;
+      margin-top: 0.35rem;
+    }
   </style>
   <script>
     document.addEventListener('DOMContentLoaded', function() {

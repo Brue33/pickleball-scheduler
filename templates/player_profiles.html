@@ -15,8 +15,8 @@
   </header>
 
   <div id="pp-add-panel" class="pp-add-panel" {% if not show_add %}hidden{% endif %}>
-    <form method="post" action="{{ url_for('player_profiles_add') }}" class="pp-add-form">
-      {% with form_prefix='add', profile=empty_profile %}
+    <form method="post" action="{{ url_for('player_profiles_add') }}" class="pp-add-form" enctype="multipart/form-data">
+      {% with form_prefix='add', profile=empty_profile, spouse_choices=spouse_choices %}
         {% include "_player_profile_fields.html" %}
       {% endwith %}
       <label for="pp-confirm-name">Type the full name again (to add this profile)</label>
@@ -30,7 +30,7 @@
   <div class="fg-grid">
     {% for profile in profiles %}
       <a href="{{ url_for('player_profile_page', player=profile.name) }}" class="fg-card">
-        <span class="fg-card-icon" aria-hidden="true">{{ profile.icon }}</span>
+        {% include "_player_profile_card_icon.html" %}
         <h2 class="fg-card-title">{{ profile.name }}</h2>
         <p class="fg-card-desc">{{ profile.bio_preview }}</p>
         <p class="fg-card-meta {% if profile.has_bio %}fg-meta-ok{% else %}fg-meta-muted{% endif %}">
@@ -129,6 +129,26 @@
     .pp-skill-list li { margin-bottom: 0.45rem; }
     .pp-skill-list span { color: var(--muted); }
     .pp-skill-close { margin-top: 0; }
+    .fg-card-icon-img {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 2px solid var(--court-line);
+      display: block;
+      margin-bottom: 0.65rem;
+    }
+    .pp-image-block { margin-top: 0.25rem; }
+    .pp-optional { color: var(--muted); font-weight: 400; font-size: 0.85rem; }
+    .pp-form-preview {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 2px solid var(--court-line);
+      display: block;
+      margin-top: 0.35rem;
+    }
     .fg-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));

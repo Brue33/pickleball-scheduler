@@ -68,6 +68,7 @@ RESALE_FILE = _DATA_DIR / "pickleball_resale.json"
 RESALE_IMAGES_DIR = _DATA_DIR / "resale_images"
 COURT_BOOKINGS_FILE = _DATA_DIR / "court_bookings.json"
 COURT_IMAGES_DIR = _DATA_DIR / "court_images"
+PLAYER_IMAGES_DIR = _DATA_DIR / "player_images"
 REPLAY_STARTING_RATINGS_FILE = _DATA_DIR / "replay_starting_ratings.json"
 PLAYERS_PASSWORD = "PBPlayers26"
 SCHEDULE_PASSWORD = "PBGames26"
@@ -273,9 +274,11 @@ def profile_has_content(profile):
     p = normalize_player_profile(profile)
     if (p.get("legacy_bio") or "").strip():
         return True
+    if (p.get("image") or "").strip():
+        return True
     for key in (
         "first_name", "last_initial", "skill", "location", "paddle",
-        "handedness", "favorite_ball", "open_to_drop_in", "slack_workspace",
+        "handedness", "favorite_ball", "open_to_drop_in", "slack_workspace", "spouse",
     ):
         if (p.get(key) or "").strip():
             return True
@@ -300,6 +303,9 @@ def profile_info_rows(profile, player_fallback=""):
         rows.append({"label": "Right or left handed", "value": p["handedness"]})
     if p.get("favorite_ball"):
         rows.append({"label": "Favorite ball", "value": p["favorite_ball"]})
+    if p.get("spouse"):
+        spouse_name = resolve_site_player(p["spouse"]) or p["spouse"]
+        rows.append({"label": "Spouse", "value": spouse_name, "player": spouse_name})
     courts = p.get("preferred_courts") or []
     if courts:
         rows.append({"label": "Preferred courts", "value": ", ".join(courts)})
@@ -358,6 +364,11 @@ def profile_for_edit(profile, player_name):
     p["_courts_checked"] = checked
     p["_court_other"] = other
     p["_court_has_other"] = bool(other)
+    spouse = (p.get("spouse") or "").strip()
+    if spouse:
+        p["spouse"] = resolve_site_player(spouse) or spouse
+    image = (p.get("image") or "").strip()
+    p["image_url"] = url_for("player_profile_image", filename=image) if image else None
     return p
 
 
@@ -383,7 +394,13 @@ def parse_preferred_courts_form(form):
     return courts
 
 
-def parse_profile_form(form, fallback_name=""):
+def profile_spouse_choices(current_player=""):
+    """Other players on the site, excluding the profile being edited."""
+    current = (current_player or "").strip().lower()
+    return [name for name in all_site_players() if name.lower() != current]
+
+
+def parse_profile_form(form, fallback_name="", current_player=""):
     first_name = (form.get("first_name") or "").strip()
     last_initial = (form.get("last_initial") or "").strip().upper()[:1]
     skill = (form.get("skill") or "").strip()
@@ -398,6 +415,13 @@ def parse_profile_form(form, fallback_name=""):
     slack = (form.get("slack_workspace") or "").strip()
     if slack not in PROFILE_YES_NO_OPTIONS:
         slack = ""
+    spouse = (form.get("spouse") or "").strip()
+    resolved_spouse = resolve_site_player(spouse) if spouse else None
+    current = (current_player or fallback_name or "").strip().lower()
+    if resolved_spouse and resolved_spouse.lower() != current:
+        spouse = resolved_spouse
+    else:
+        spouse = ""
     if not first_name and not last_initial and fallback_name:
         first_name, last_initial = parse_player_name_parts(fallback_name)
     return {
@@ -411,6 +435,7 @@ def parse_profile_form(form, fallback_name=""):
         "preferred_courts": parse_preferred_courts_form(form),
         "open_to_drop_in": open_drop,
         "slack_workspace": slack,
+        "spouse": spouse,
     }
 
 
@@ -419,8 +444,76 @@ def save_player_profile(player, profile):
     if profile_has_content(profile):
         profiles[player] = normalize_player_profile(profile)
     else:
-        profiles.pop(player, None)
+        existing = profiles.pop(player, None)
+        if existing:
+            _delete_player_image(existing.get("image"))
     save_player_profiles(profiles)
+
+
+def delete_player_profile(player):
+    profiles = load_player_profiles()
+    existing = profiles.pop(player, None)
+    if existing:
+        _delete_player_image(existing.get("image"))
+    save_player_profiles(profiles)
+
+
+def _player_image_basename(player_name):
+    base = secure_filename((player_name or "player").replace(" ", "_").lower())
+    return base or secrets.token_hex(8)
+
+
+def _save_player_image(image_file, player_name):
+    ext = image_file.filename.rsplit(".", 1)[1].lower()
+    image_name = f"{_player_image_basename(player_name)}.{ext}"
+    PLAYER_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    image_file.save(PLAYER_IMAGES_DIR / image_name)
+    return image_name
+
+
+def _delete_player_image(image_name):
+    if not image_name:
+        return
+    safe_name = secure_filename(image_name)
+    path = PLAYER_IMAGES_DIR / safe_name
+    if path.is_file():
+        path.unlink()
+
+
+def _handle_profile_image_upload(profile, player, image_file, existing_profile=None):
+    """Attach uploaded image to profile dict; preserve existing image if none uploaded."""
+    validated, err = _validate_upload_image(image_file)
+    if err:
+        return err
+    existing_profile = existing_profile or {}
+    if validated:
+        old = (existing_profile.get("image") or "").strip()
+        profile["image"] = _save_player_image(validated, player)
+        if old and old != profile["image"]:
+            _delete_player_image(old)
+    elif existing_profile.get("image"):
+        profile["image"] = existing_profile["image"]
+    return None
+
+
+def profile_image_url(profile):
+    image = (normalize_player_profile(profile).get("image") or "").strip()
+    if not image:
+        return None
+    return url_for("player_profile_image", filename=image)
+
+
+def format_player_profile_card(name, stored_profile):
+    stored = normalize_player_profile(stored_profile)
+    icon = name[0].upper() if name else "?"
+    image_url = profile_image_url(stored)
+    return {
+        "name": name,
+        "icon": icon,
+        "image_url": image_url,
+        "bio_preview": profile_card_preview(stored, name),
+        "has_bio": profile_has_content(stored),
+    }
 
 
 def all_site_players():
@@ -2079,19 +2172,16 @@ def player_profiles_page():
     profiles = []
     for name in all_site_players():
         stored = profiles_data.get(name, {})
-        profiles.append({
-            "name": name,
-            "icon": name[0].upper() if name else "?",
-            "bio_preview": profile_card_preview(stored, name),
-            "has_bio": profile_has_content(stored),
-        })
+        profiles.append(format_player_profile_card(name, stored))
     show_add = (request.args.get("add") or "").strip() == "1"
     court_choices = court_location_choices()
+    spouse_choices = profile_spouse_choices()
     return render_template(
         "player_profiles.html",
         profiles=profiles,
         show_add=show_add,
         court_choices=court_choices,
+        spouse_choices=spouse_choices,
         empty_profile=profile_for_edit({}, ""),
     )
 
@@ -2099,10 +2189,11 @@ def player_profiles_page():
 @app.route("/friends-group/player-profiles/add", methods=["POST"])
 def player_profiles_add():
     """Add a new player profile (name must be typed exactly to confirm)."""
-    profile = parse_profile_form(request.form)
+    profiles_data = load_player_profiles()
     player_name = roster_name_from_profile_fields(
-        profile.get("first_name"), profile.get("last_initial")
+        request.form.get("first_name", ""), request.form.get("last_initial", "")
     )
+    profile = parse_profile_form(request.form, current_player=player_name)
     confirmed = request.form.get("confirm_name", "").strip()
 
     if not player_name:
@@ -2117,6 +2208,12 @@ def player_profiles_add():
 
     existing = resolve_site_player(player_name)
     if existing:
+        img_err = _handle_profile_image_upload(
+            profile, existing, request.files.get("image"), profiles_data.get(existing, {})
+        )
+        if img_err:
+            flash(img_err, "error")
+            return redirect(url_for("player_profiles_page", add=1))
         save_player_profile(existing, profile)
         flash(f"Profile updated for {existing}.", "success")
         return redirect(url_for("player_profile_page", player=existing))
@@ -2124,6 +2221,10 @@ def player_profiles_add():
     players = load_players_list()
     players.append(player_name)
     save_players_list(players)
+    img_err = _handle_profile_image_upload(profile, player_name, request.files.get("image"))
+    if img_err:
+        flash(img_err, "error")
+        return redirect(url_for("player_profiles_page", add=1))
     save_player_profile(player_name, profile)
 
     flash(f"Profile added for {player_name}.", "success")
@@ -2143,6 +2244,7 @@ def player_profile_page():
     profiles_data = load_player_profiles()
     show_edit = (request.args.get("edit") or "").strip() == "1"
     court_choices = court_location_choices()
+    spouse_choices = profile_spouse_choices(player)
 
     if request.method == "POST":
         confirmed = request.form.get("confirm_name", "").strip()
@@ -2153,21 +2255,28 @@ def player_profile_page():
             else:
                 flash("Enter your name exactly to edit this profile.", "error")
             show_edit = True
-            profile = profile_for_edit(parse_profile_form(request.form, fallback_name=player), player)
+            profile = profile_for_edit(parse_profile_form(request.form, fallback_name=player, current_player=player), player)
         elif action == "delete":
-            profiles_data.pop(player, None)
-            save_player_profiles(profiles_data)
+            delete_player_profile(player)
             flash(f"{player}'s profile has been deleted.", "success")
             return redirect(url_for("player_profiles_page"))
         else:
-            profile = parse_profile_form(request.form, fallback_name=player)
-            save_player_profile(player, profile)
-            flash("Profile updated.", "success")
-            return redirect(url_for("player_profile_page", player=player))
+            profile = parse_profile_form(request.form, fallback_name=player, current_player=player)
+            img_err = _handle_profile_image_upload(
+                profile, player, request.files.get("image"), profiles_data.get(player, {})
+            )
+            if img_err:
+                flash(img_err, "error")
+                show_edit = True
+                profile = profile_for_edit(profile, player)
+            else:
+                save_player_profile(player, profile)
+                flash("Profile updated.", "success")
+                return redirect(url_for("player_profile_page", player=player))
 
     stored = profiles_data.get(player, {})
     if show_edit and request.method == "POST":
-        profile = profile_for_edit(parse_profile_form(request.form, fallback_name=player), player)
+        profile = profile_for_edit(parse_profile_form(request.form, fallback_name=player, current_player=player), player)
     else:
         profile = profile_for_edit(stored, player)
     info_rows = profile_info_rows(stored, player)
@@ -2179,6 +2288,7 @@ def player_profile_page():
         has_profile=profile_has_content(stored),
         show_edit=show_edit,
         court_choices=court_choices,
+        spouse_choices=spouse_choices,
     )
 
 
@@ -3301,6 +3411,16 @@ def court_booking_image(filename):
     if not (COURT_IMAGES_DIR / safe_name).is_file():
         return "Not found", 404
     return send_from_directory(COURT_IMAGES_DIR, safe_name)
+
+
+@app.route("/friends-group/player-profile-image/<path:filename>")
+def player_profile_image(filename):
+    safe_name = secure_filename(filename)
+    if not safe_name or safe_name != filename:
+        return "Not found", 404
+    if not (PLAYER_IMAGES_DIR / safe_name).is_file():
+        return "Not found", 404
+    return send_from_directory(PLAYER_IMAGES_DIR, safe_name)
 
 
 @app.route("/commish-tool")
