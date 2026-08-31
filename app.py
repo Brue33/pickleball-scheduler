@@ -8,11 +8,13 @@ import hmac
 import hashlib
 import os
 import secrets
+import zipfile
+from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
 from zoneinfo import ZoneInfo
 
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_from_directory, send_file
 from werkzeug.utils import secure_filename
 from scheduler import (
     generate_schedule,
@@ -503,6 +505,20 @@ def profile_image_url(profile):
     return url_for("player_profile_image", filename=image)
 
 
+def profile_card_summary_rows(profile, fallback_name=""):
+    """Short fields shown on profile hub cards."""
+    p = normalize_player_profile(profile)
+    spouse = "—"
+    if p.get("spouse"):
+        spouse = resolve_site_player(p["spouse"]) or p["spouse"]
+    return [
+        {"label": "Skill", "value": p.get("skill") or "—"},
+        {"label": "Location", "value": p.get("location") or "—"},
+        {"label": "Spouse", "value": spouse},
+        {"label": "Open to drop-in", "value": p.get("open_to_drop_in") or "—"},
+    ]
+
+
 def format_player_profile_card(name, stored_profile):
     stored = normalize_player_profile(stored_profile)
     icon = name[0].upper() if name else "?"
@@ -511,7 +527,7 @@ def format_player_profile_card(name, stored_profile):
         "name": name,
         "icon": icon,
         "image_url": image_url,
-        "bio_preview": profile_card_preview(stored, name),
+        "card_rows": profile_card_summary_rows(stored, name),
         "has_bio": profile_has_content(stored),
     }
 
@@ -4331,7 +4347,22 @@ def _export_key_valid():
 def export_player_bios():
     if not _export_key_valid():
         return jsonify({"error": "Forbidden"}), 403
-    return jsonify(load_player_bios())
+    return jsonify(load_player_profiles())
+
+
+@app.route("/export/replay_starting_ratings")
+def export_replay_starting_ratings():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify(load_replay_starting_ratings())
+
+
+@app.route("/export/draft_schedule")
+def export_draft_schedule():
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    data = load_draft_schedule()
+    return jsonify(data) if data else jsonify({})
 
 
 @app.route("/export/rankings")
@@ -4447,6 +4478,32 @@ def export_court_bookings():
     if not _export_key_valid():
         return jsonify({"error": "Forbidden"}), 403
     return jsonify({"courts": load_court_bookings()})
+
+
+@app.route("/export/images")
+def export_images():
+    """Zip resale, court, and player profile images for backup."""
+    if not _export_key_valid():
+        return jsonify({"error": "Forbidden"}), 403
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for subdir, img_dir in (
+            ("resale_images", RESALE_IMAGES_DIR),
+            ("court_images", COURT_IMAGES_DIR),
+            ("player_images", PLAYER_IMAGES_DIR),
+        ):
+            if not img_dir.is_dir():
+                continue
+            for path in sorted(img_dir.iterdir()):
+                if path.is_file():
+                    zf.write(path, f"{subdir}/{path.name}")
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="pickleball_images.zip",
+    )
 
 
 def _schedule_e1(schedule_prob_team1):

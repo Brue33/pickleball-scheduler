@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Backup data from Render (or any host) into local JSON files.
+# Backup data from Render (or any host) into local JSON files and images.
 #
 # Usage (no EXPORT_SECRET on Render — uses schedule password by default):
 #   export RENDER_URL="https://YOUR-SERVICE-NAME.onrender.com"
@@ -37,18 +37,49 @@ backup_curl() {
   mv "$tmp" "$outfile"
 }
 
-backup_curl "player_bios" "player_bios.json"
-backup_curl "rankings" "rankings.json"
-backup_curl "players" "players.json"
-backup_curl "match_history" "match_history.json"
-backup_curl "play_history" "play_history.json"
-backup_curl "availability" "availability.json"
-backup_curl "published_schedule" "published_schedule.json"
-backup_curl "drop_in_schedule" "drop_in_schedule.json"
-backup_curl "drop_in_requests" "drop_in_requests.json"
-backup_curl "drop_in_hub" "drop_in_hub.json"
-backup_curl "mens_league_standings" "mens_league_standings.json"
-backup_curl "pickleball_resale" "pickleball_resale.json"
-backup_curl "court_bookings" "court_bookings.json"
+# endpoint:outfile — keep in sync with /export/* routes in app.py
+JSON_EXPORTS=(
+  "player_bios:player_bios.json"
+  "players:players.json"
+  "rankings:rankings.json"
+  "match_history:match_history.json"
+  "play_history:play_history.json"
+  "availability:availability.json"
+  "published_schedule:published_schedule.json"
+  "draft_schedule:draft_schedule.json"
+  "drop_in_schedule:drop_in_schedule.json"
+  "drop_in_requests:drop_in_requests.json"
+  "drop_in_hub:drop_in_hub.json"
+  "mens_league_standings:mens_league_standings.json"
+  "replay_starting_ratings:replay_starting_ratings.json"
+  "pickleball_resale:pickleball_resale.json"
+  "court_bookings:court_bookings.json"
+)
 
-echo "Backup complete. Files updated: player_bios.json, rankings.json, players.json, match_history.json, play_history.json, availability.json, published_schedule.json, drop_in_schedule.json, drop_in_requests.json, drop_in_hub.json, mens_league_standings.json, pickleball_resale.json, court_bookings.json"
+BACKED_UP_FILES=()
+for item in "${JSON_EXPORTS[@]}"; do
+  endpoint="${item%%:*}"
+  outfile="${item##*:}"
+  backup_curl "$endpoint" "$outfile"
+  BACKED_UP_FILES+=("$outfile")
+done
+
+# Profile, court, and resale images (not stored in JSON)
+IMAGES_ZIP="pickleball_images_backup.zip"
+if curl -fsS "$RENDER_URL/export/images?key=$EXPORT_KEY" -o "$IMAGES_ZIP"; then
+  if file "$IMAGES_ZIP" | grep -qi zip; then
+    unzip -o "$IMAGES_ZIP" -d .
+    rm -f "$IMAGES_ZIP"
+    BACKED_UP_FILES+=("resale_images/ court_images/ player_images/")
+    echo "Images extracted into resale_images/, court_images/, and player_images/"
+  else
+    rm -f "$IMAGES_ZIP"
+    echo "Note: image backup skipped (deploy latest app for /export/images, or no images on server)."
+  fi
+else
+  echo "Note: image backup skipped (endpoint unavailable — deploy latest app to back up photos)."
+fi
+
+echo ""
+echo "Backup complete. JSON files updated:"
+printf '  %s\n' "${BACKED_UP_FILES[@]}"

@@ -169,7 +169,9 @@ export RENDER_URL="https://YOUR-SERVICE-NAME.onrender.com"
 ./backup_from_render.sh
 ```
 
-That pulls schedules, rankings, past games, availability, drop-in schedule, and **Men's League weekly standings** into local JSON files.
+That pulls all live JSON data (players, structured player profiles, rankings, match history, availability, schedules, drop-in, Men's League standings, Local Courts, Pickleball Resale, and more) plus uploaded images into `resale_images/`, `court_images/`, and `player_images/`.
+
+**Deploy the latest app on Render before backing up** so the export endpoints include everything added recently (structured profiles, courts, resale, profile photos).
 
 Optional: if you later add `EXPORT_SECRET` on Render for a separate backup password, set `export EXPORT_KEY="your-secret"` before running the script.
 

@@ -32,10 +32,14 @@
       <a href="{{ url_for('player_profile_page', player=profile.name) }}" class="fg-card">
         {% include "_player_profile_card_icon.html" %}
         <h2 class="fg-card-title">{{ profile.name }}</h2>
-        <p class="fg-card-desc">{{ profile.bio_preview }}</p>
-        <p class="fg-card-meta {% if profile.has_bio %}fg-meta-ok{% else %}fg-meta-muted{% endif %}">
-          {% if profile.has_bio %}Profile added{% else %}No bio yet{% endif %}
-        </p>
+        <dl class="pp-card-rows">
+          {% for row in profile.card_rows %}
+            <div class="pp-card-row">
+              <dt>{{ row.label }}</dt>
+              <dd>{{ row.value }}</dd>
+            </div>
+          {% endfor %}
+        </dl>
       </a>
     {% endfor %}
     {% if not profiles %}
@@ -187,11 +191,22 @@
       color: var(--accent);
       margin-bottom: 0.65rem;
     }
-    .fg-card-title { margin: 0 0 0.4rem 0; font-size: 1.15rem; color: var(--accent); }
-    .fg-card-desc { margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--muted); line-height: 1.45; }
-    .fg-card-meta { margin: 0; font-size: 0.85rem; color: var(--text); }
-    .fg-meta-ok { color: var(--success); font-weight: 600; }
-    .fg-meta-muted { color: var(--muted); }
+    .fg-card-title { margin: 0 0 0.65rem 0; font-size: 1.15rem; color: var(--accent); }
+    .pp-card-rows { margin: 0; }
+    .pp-card-row { margin: 0.35rem 0; font-size: 0.88rem; line-height: 1.4; }
+    .pp-card-row dt {
+      display: block;
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.1rem;
+    }
+    .pp-card-row dd {
+      display: block;
+      margin: 0;
+      color: var(--text);
+    }
     .pp-empty { grid-column: 1 / -1; color: var(--muted); }
     @media (max-width: 480px) {
       .fg-grid { grid-template-columns: 1fr; }
