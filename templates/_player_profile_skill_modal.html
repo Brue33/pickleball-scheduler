@@ -1,0 +1,16 @@
+<div id="pp-skill-modal" class="rating-gain-modal" hidden aria-hidden="true">
+  <div class="rating-gain-backdrop" data-skill-close></div>
+  <div class="rating-gain-content pp-skill-modal-content" role="dialog" aria-labelledby="pp-skill-modal-title">
+    <h2 id="pp-skill-modal-title" class="rating-gain-title">Pickleball skill levels</h2>
+    <img src="{{ url_for('static', filename='pickleball_skill_levels.png') }}" alt="Pickleball skill levels chart" class="pp-skill-image">
+    <ul class="pp-skill-list">
+      {% for item in profile_skill_level_guide %}
+        <li>
+          <strong>{{ item.level }} — {{ item.title }}</strong>
+          <span>{{ item.desc }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+    <button type="button" class="btn btn-secondary pp-skill-close" data-skill-close>Close</button>
+  </div>
+</div>

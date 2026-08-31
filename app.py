@@ -44,6 +44,11 @@ def court_location_template_helpers():
         "court_location_list": court_location_choices,
         "court_picker_state": court_location_picker_context,
         "split_time_location": split_time_location,
+        "profile_skill_levels": PROFILE_SKILL_LEVELS,
+        "profile_skill_level_guide": PROFILE_SKILL_LEVEL_GUIDE,
+        "profile_handedness_options": PROFILE_HANDEDNESS_OPTIONS,
+        "profile_yes_no_options": PROFILE_YES_NO_OPTIONS,
+        "profile_formatted_name": profile_formatted_name,
     }
 
 # Data directory: use PICKLEBALL_DATA_DIR if set (persists across code deploys), else same folder as app
@@ -75,6 +80,20 @@ OPEN_DROP_IN_TIME_SLOTS = {
     "evening": "Evening",
     "any": "Any time",
 }
+
+PROFILE_SKILL_LEVELS = ["2.0", "2.5", "3.0", "3.5", "4.0", "4.5", "5.0", "5.5"]
+PROFILE_SKILL_LEVEL_GUIDE = [
+    {"level": "2.0", "title": "BEGINNER", "desc": "Learning rules, basic strokes, limited control."},
+    {"level": "2.5", "title": "ADVANCED BEGINNER", "desc": "Can rally short exchanges, learning positioning."},
+    {"level": "3.0", "title": "INTERMEDIATE", "desc": "Consistent serves, improved shot selection."},
+    {"level": "3.5", "title": "INTERMEDIATE+", "desc": "Uses dinks, drops, better court awareness."},
+    {"level": "4.0", "title": "ADVANCED", "desc": "Strategic play, solid defense, teamwork."},
+    {"level": "4.5", "title": "ADVANCED+", "desc": "Controls pace, aggressive net play."},
+    {"level": "5.0", "title": "ELITE", "desc": "High consistency, competitive tournament level."},
+    {"level": "5.5", "title": "PRO", "desc": "Professional-level speed, precision, and strategy."},
+]
+PROFILE_HANDEDNESS_OPTIONS = ["Right", "Left"]
+PROFILE_YES_NO_OPTIONS = ["Yes", "No"]
 
 PICKLE_U_LEAGUE_TABS = {
     "mens": {
@@ -170,21 +189,238 @@ def save_players_list(players):
         json.dump({"players": unique}, f, indent=2)
 
 
-def load_player_bios():
-    """Load player name -> bio text. Returns dict."""
+def load_player_profiles():
+    """Load player name -> structured profile dict."""
     if not PLAYER_BIOS_FILE.exists():
         return {}
     try:
         with open(PLAYER_BIOS_FILE) as f:
-            return json.load(f)
+            raw = json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {name: normalize_player_profile(value) for name, value in raw.items()}
+
+
+def save_player_profiles(profiles):
+    """Save structured player profiles."""
+    with open(PLAYER_BIOS_FILE, "w") as f:
+        json.dump(profiles, f, indent=2)
+
+
+def load_player_bios():
+    """Legacy text bios for rankings hover and exports."""
+    return {
+        name: profile_bio_text(profile, name)
+        for name, profile in load_player_profiles().items()
+        if profile_has_content(profile)
+    }
 
 
 def save_player_bios(bios):
-    """Save player bios dict."""
-    with open(PLAYER_BIOS_FILE, "w") as f:
-        json.dump(bios, f, indent=2)
+    """Legacy save: plain text bios (commish Players → Bios page)."""
+    profiles = load_player_profiles()
+    for name, text in bios.items():
+        text = (text or "").strip()
+        if text:
+            profiles[name] = {"legacy_bio": text}
+        else:
+            profiles.pop(name, None)
+    save_player_profiles(profiles)
+
+
+def normalize_player_profile(raw):
+    if raw is None:
+        return {}
+    if isinstance(raw, str):
+        text = raw.strip()
+        return {"legacy_bio": text} if text else {}
+    if isinstance(raw, dict):
+        return dict(raw)
+    return {}
+
+
+def parse_player_name_parts(full_name):
+    parts = (full_name or "").strip().split()
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], parts[-1][0].upper()
+
+
+def roster_name_from_profile_fields(first_name, last_initial):
+    first = (first_name or "").strip()
+    last = (last_initial or "").strip().upper()[:1]
+    if first and last:
+        return f"{first} {last}"
+    return first
+
+
+def profile_formatted_name(profile, fallback=""):
+    p = normalize_player_profile(profile)
+    first = (p.get("first_name") or "").strip()
+    last = (p.get("last_initial") or "").strip().upper()[:1]
+    if first and last:
+        return f"{first} {last}"
+    if first:
+        return first
+    return fallback
+
+
+def profile_has_content(profile):
+    p = normalize_player_profile(profile)
+    if (p.get("legacy_bio") or "").strip():
+        return True
+    for key in (
+        "first_name", "last_initial", "skill", "location", "paddle",
+        "handedness", "favorite_ball", "open_to_drop_in", "slack_workspace",
+    ):
+        if (p.get(key) or "").strip():
+            return True
+    return bool(p.get("preferred_courts"))
+
+
+def profile_info_rows(profile, player_fallback=""):
+    p = normalize_player_profile(profile)
+    if (p.get("legacy_bio") or "").strip():
+        return [{"label": "Bio", "value": p["legacy_bio"]}]
+    rows = []
+    name = profile_formatted_name(p, player_fallback)
+    if name:
+        rows.append({"label": "Name", "value": name})
+    if p.get("skill"):
+        rows.append({"label": "Personal skill ranking", "value": p["skill"]})
+    if p.get("location"):
+        rows.append({"label": "Location", "value": p["location"]})
+    if p.get("paddle"):
+        rows.append({"label": "Current paddle", "value": p["paddle"]})
+    if p.get("handedness"):
+        rows.append({"label": "Right or left handed", "value": p["handedness"]})
+    if p.get("favorite_ball"):
+        rows.append({"label": "Favorite ball", "value": p["favorite_ball"]})
+    courts = p.get("preferred_courts") or []
+    if courts:
+        rows.append({"label": "Preferred courts", "value": ", ".join(courts)})
+    if p.get("open_to_drop_in"):
+        rows.append({"label": "Open to drop-in games", "value": p["open_to_drop_in"]})
+    if p.get("slack_workspace"):
+        rows.append({"label": "In Slack workspace", "value": p["slack_workspace"]})
+    return rows
+
+
+def profile_card_preview(profile, fallback_name=""):
+    p = normalize_player_profile(profile)
+    if (p.get("legacy_bio") or "").strip():
+        return _bio_preview(p["legacy_bio"])
+    parts = []
+    if p.get("skill"):
+        parts.append(f"Skill {p['skill']}")
+    if p.get("location"):
+        parts.append(p["location"])
+    if p.get("paddle"):
+        parts.append(p["paddle"])
+    if not parts:
+        return "No profile info yet"
+    return _bio_preview(" · ".join(parts))
+
+
+def profile_bio_text(profile, fallback_name=""):
+    p = normalize_player_profile(profile)
+    if (p.get("legacy_bio") or "").strip():
+        return p["legacy_bio"]
+    rows = profile_info_rows(p, fallback_name)
+    if not rows:
+        return ""
+    return "\n".join(f"{row['label']}: {row['value']}" for row in rows)
+
+
+def profile_for_edit(profile, player_name):
+    p = normalize_player_profile(profile)
+    if not (p.get("first_name") or "").strip() and not (p.get("last_initial") or "").strip():
+        first, last = parse_player_name_parts(player_name)
+        p["first_name"] = first
+        p["last_initial"] = last
+    if not isinstance(p.get("preferred_courts"), list):
+        p["preferred_courts"] = []
+    known = {name.lower(): name for name in court_location_choices()}
+    checked = []
+    other = ""
+    for court in p.get("preferred_courts") or []:
+        key = (court or "").strip().lower()
+        if not key:
+            continue
+        if key in known:
+            checked.append(known[key])
+        elif not other:
+            other = court
+    p["_courts_checked"] = checked
+    p["_court_other"] = other
+    p["_court_has_other"] = bool(other)
+    return p
+
+
+def parse_preferred_courts_form(form):
+    courts = []
+    seen = set()
+    for item in form.getlist("preferred_courts"):
+        item = (item or "").strip()
+        if not item:
+            continue
+        if item == "__other__":
+            other = (form.get("preferred_court_other") or "").strip()
+            if other:
+                key = other.lower()
+                if key not in seen:
+                    seen.add(key)
+                    courts.append(other)
+        else:
+            key = item.lower()
+            if key not in seen:
+                seen.add(key)
+                courts.append(item)
+    return courts
+
+
+def parse_profile_form(form, fallback_name=""):
+    first_name = (form.get("first_name") or "").strip()
+    last_initial = (form.get("last_initial") or "").strip().upper()[:1]
+    skill = (form.get("skill") or "").strip()
+    if skill not in PROFILE_SKILL_LEVELS:
+        skill = ""
+    handedness = (form.get("handedness") or "").strip()
+    if handedness not in PROFILE_HANDEDNESS_OPTIONS:
+        handedness = ""
+    open_drop = (form.get("open_to_drop_in") or "").strip()
+    if open_drop not in PROFILE_YES_NO_OPTIONS:
+        open_drop = ""
+    slack = (form.get("slack_workspace") or "").strip()
+    if slack not in PROFILE_YES_NO_OPTIONS:
+        slack = ""
+    if not first_name and not last_initial and fallback_name:
+        first_name, last_initial = parse_player_name_parts(fallback_name)
+    return {
+        "first_name": first_name[:40],
+        "last_initial": last_initial[:1],
+        "skill": skill,
+        "location": (form.get("location") or "").strip()[:120],
+        "paddle": (form.get("paddle") or "").strip()[:80],
+        "handedness": handedness,
+        "favorite_ball": (form.get("favorite_ball") or "").strip()[:80],
+        "preferred_courts": parse_preferred_courts_form(form),
+        "open_to_drop_in": open_drop,
+        "slack_workspace": slack,
+    }
+
+
+def save_player_profile(player, profile):
+    profiles = load_player_profiles()
+    if profile_has_content(profile):
+        profiles[player] = normalize_player_profile(profile)
+    else:
+        profiles.pop(player, None)
+    save_player_profiles(profiles)
 
 
 def all_site_players():
@@ -195,7 +431,7 @@ def all_site_players():
         if name.lower() not in seen:
             players.append(name)
             seen.add(name.lower())
-    for name in load_player_bios():
+    for name in load_player_profiles():
         if name.lower() not in seen:
             players.append(name)
             seen.add(name.lower())
@@ -1839,17 +2075,59 @@ def friends_group():
 @app.route("/friends-group/player-profiles")
 def player_profiles_page():
     """Hub of player profile cards for everyone on the site."""
-    bios = load_player_bios()
+    profiles_data = load_player_profiles()
     profiles = []
     for name in all_site_players():
-        bio = (bios.get(name) or "").strip()
+        stored = profiles_data.get(name, {})
         profiles.append({
             "name": name,
             "icon": name[0].upper() if name else "?",
-            "bio_preview": _bio_preview(bio),
-            "has_bio": bool(bio),
+            "bio_preview": profile_card_preview(stored, name),
+            "has_bio": profile_has_content(stored),
         })
-    return render_template("player_profiles.html", profiles=profiles)
+    show_add = (request.args.get("add") or "").strip() == "1"
+    court_choices = court_location_choices()
+    return render_template(
+        "player_profiles.html",
+        profiles=profiles,
+        show_add=show_add,
+        court_choices=court_choices,
+        empty_profile=profile_for_edit({}, ""),
+    )
+
+
+@app.route("/friends-group/player-profiles/add", methods=["POST"])
+def player_profiles_add():
+    """Add a new player profile (name must be typed exactly to confirm)."""
+    profile = parse_profile_form(request.form)
+    player_name = roster_name_from_profile_fields(
+        profile.get("first_name"), profile.get("last_initial")
+    )
+    confirmed = request.form.get("confirm_name", "").strip()
+
+    if not player_name:
+        flash("Enter a first name and last initial.", "error")
+        return redirect(url_for("player_profiles_page", add=1))
+    if len(player_name) > 60:
+        flash("Player name is too long.", "error")
+        return redirect(url_for("player_profiles_page", add=1))
+    if confirmed.lower() != player_name.lower():
+        flash("Enter the player name exactly to add this profile.", "error")
+        return redirect(url_for("player_profiles_page", add=1))
+
+    existing = resolve_site_player(player_name)
+    if existing:
+        save_player_profile(existing, profile)
+        flash(f"Profile updated for {existing}.", "success")
+        return redirect(url_for("player_profile_page", player=existing))
+
+    players = load_players_list()
+    players.append(player_name)
+    save_players_list(players)
+    save_player_profile(player_name, profile)
+
+    flash(f"Profile added for {player_name}.", "success")
+    return redirect(url_for("player_profile_page", player=player_name))
 
 
 @app.route("/friends-group/player-profile", methods=["GET", "POST"])
@@ -1862,30 +2140,45 @@ def player_profile_page():
         flash("Player not found.", "error")
         return redirect(url_for("player_profiles_page"))
 
-    bios = load_player_bios()
+    profiles_data = load_player_profiles()
     show_edit = (request.args.get("edit") or "").strip() == "1"
+    court_choices = court_location_choices()
 
     if request.method == "POST":
         confirmed = request.form.get("confirm_name", "").strip()
+        action = request.form.get("action", "save").strip()
         if confirmed.lower() != player.lower():
-            flash("Enter your name exactly to edit this profile.", "error")
+            if action == "delete":
+                flash("Enter your name exactly to delete this profile.", "error")
+            else:
+                flash("Enter your name exactly to edit this profile.", "error")
             show_edit = True
+            profile = profile_for_edit(parse_profile_form(request.form, fallback_name=player), player)
+        elif action == "delete":
+            profiles_data.pop(player, None)
+            save_player_profiles(profiles_data)
+            flash(f"{player}'s profile has been deleted.", "success")
+            return redirect(url_for("player_profiles_page"))
         else:
-            new_bio = request.form.get("bio", "").strip()
-            if new_bio:
-                bios[player] = new_bio
-            elif player in bios:
-                del bios[player]
-            save_player_bios(bios)
+            profile = parse_profile_form(request.form, fallback_name=player)
+            save_player_profile(player, profile)
             flash("Profile updated.", "success")
             return redirect(url_for("player_profile_page", player=player))
 
-    bio = bios.get(player, "")
+    stored = profiles_data.get(player, {})
+    if show_edit and request.method == "POST":
+        profile = profile_for_edit(parse_profile_form(request.form, fallback_name=player), player)
+    else:
+        profile = profile_for_edit(stored, player)
+    info_rows = profile_info_rows(stored, player)
     return render_template(
         "player_profile.html",
         player=player,
-        bio=bio,
+        profile=profile,
+        info_rows=info_rows,
+        has_profile=profile_has_content(stored),
         show_edit=show_edit,
+        court_choices=court_choices,
     )
 
 

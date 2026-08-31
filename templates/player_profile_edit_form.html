@@ -1,0 +1,26 @@
+<form method="post" action="{{ url_for('player_profile_page', player=player) }}" class="pp-edit-form">
+  <input type="hidden" name="player" value="{{ player|e }}">
+  {% with form_prefix='edit', profile=profile %}
+    {% include "_player_profile_fields.html" %}
+  {% endwith %}
+  <label for="confirm-name">Your name (to edit this profile)</label>
+  <input type="text" id="confirm-name" name="confirm_name" placeholder="e.g. {{ player|e }}" required style="max-width: 16rem;">
+  <div class="pp-edit-actions">
+    <button type="submit" name="action" value="save">Save profile</button>
+    {% if show_edit %}
+      <a href="{{ url_for('player_profile_page', player=player) }}" class="btn btn-secondary">Cancel</a>
+    {% endif %}
+  </div>
+</form>
+
+<div class="pp-delete-section">
+  <h2 class="pp-delete-title">Delete profile</h2>
+  <p class="pp-delete-note">Removes profile details from Player Profiles and Rankings. The player card stays on the list.</p>
+  <form method="post" action="{{ url_for('player_profile_page', player=player) }}" class="pp-delete-form" onsubmit="return confirm('Delete {{ player|e }}\'s profile? This cannot be undone.');">
+    <input type="hidden" name="player" value="{{ player|e }}">
+    <input type="hidden" name="action" value="delete">
+    <label for="confirm-name-delete">Your name (to delete this profile)</label>
+    <input type="text" id="confirm-name-delete" name="confirm_name" placeholder="e.g. {{ player|e }}" required style="max-width: 16rem;">
+    <button type="submit" class="btn pp-delete-btn">Delete profile</button>
+  </form>
+</div>

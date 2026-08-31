@@ -1,0 +1,95 @@
+{% set prefix = form_prefix|default('profile') %}
+{% set p = profile if profile is defined else {} %}
+{% set courts = court_choices if court_choices is defined else court_location_list() %}
+{% set selected_courts = p.get('_courts_checked', []) %}
+{% set other_court = p.get('_court_other', '') %}
+
+<div class="pp-form-grid">
+  <div class="pp-form-row pp-form-row--name">
+    <div>
+      <label for="{{ prefix }}-first-name">First name</label>
+      <input type="text" id="{{ prefix }}-first-name" name="first_name" value="{{ p.get('first_name', '')|e }}" placeholder="e.g. Bryan" maxlength="40" required style="max-width: 14rem;">
+    </div>
+    <div>
+      <label for="{{ prefix }}-last-initial">Last initial</label>
+      <input type="text" id="{{ prefix }}-last-initial" name="last_initial" value="{{ p.get('last_initial', '')|e }}" placeholder="e.g. R" maxlength="1" required style="max-width: 4rem;">
+    </div>
+  </div>
+
+  <div>
+    <label for="{{ prefix }}-skill" class="pp-label-with-help">
+      Personal skill ranking
+      <button type="button" class="pp-help-btn" data-skill-help aria-label="What do skill levels mean?">?</button>
+    </label>
+    <select id="{{ prefix }}-skill" name="skill" style="max-width: 10rem;">
+      <option value="">Select…</option>
+      {% for level in profile_skill_levels %}
+        <option value="{{ level }}" {% if p.get('skill') == level %}selected{% endif %}>{{ level }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div>
+    <label for="{{ prefix }}-location">Location</label>
+    <input type="text" id="{{ prefix }}-location" name="location" value="{{ p.get('location', '')|e }}" placeholder='e.g. West side of Traverse City' maxlength="120" style="max-width: 24rem;">
+  </div>
+
+  <div>
+    <label for="{{ prefix }}-paddle">Current paddle</label>
+    <input type="text" id="{{ prefix }}-paddle" name="paddle" value="{{ p.get('paddle', '')|e }}" placeholder="e.g. Selkirk Vanguard" maxlength="80" style="max-width: 24rem;">
+  </div>
+
+  <div>
+    <label for="{{ prefix }}-handedness">Right or left handed</label>
+    <select id="{{ prefix }}-handedness" name="handedness" style="max-width: 10rem;">
+      <option value="">Select…</option>
+      {% for option in profile_handedness_options %}
+        <option value="{{ option }}" {% if p.get('handedness') == option %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div>
+    <label for="{{ prefix }}-favorite-ball">Favorite ball</label>
+    <input type="text" id="{{ prefix }}-favorite-ball" name="favorite_ball" value="{{ p.get('favorite_ball', '')|e }}" placeholder="e.g. Selkirk Pro SL1" maxlength="80" style="max-width: 24rem;">
+  </div>
+
+  <fieldset class="pp-courts-fieldset">
+    <legend>Preferred courts</legend>
+    <p class="pp-field-hint">Pick all that apply from local courts, or add another below.</p>
+    <div class="pp-court-checks">
+      {% for court_name in courts %}
+        <label class="pp-check-label">
+          <input type="checkbox" name="preferred_courts" value="{{ court_name|e }}" {% if court_name in selected_courts %}checked{% endif %}>
+          {{ court_name }}
+        </label>
+      {% endfor %}
+      <label class="pp-check-label">
+        <input type="checkbox" name="preferred_courts" value="__other__" id="{{ prefix }}-court-other-check" {% if other_court %}checked{% endif %}>
+        Other
+      </label>
+    </div>
+    <label for="{{ prefix }}-court-other">Other court</label>
+    <input type="text" id="{{ prefix }}-court-other" name="preferred_court_other" value="{{ other_court|e }}" placeholder="Court not listed above" maxlength="80" style="max-width: 24rem;">
+  </fieldset>
+
+  <div>
+    <label for="{{ prefix }}-drop-in">Open to drop-in games</label>
+    <select id="{{ prefix }}-drop-in" name="open_to_drop_in" style="max-width: 10rem;">
+      <option value="">Select…</option>
+      {% for option in profile_yes_no_options %}
+        <option value="{{ option }}" {% if p.get('open_to_drop_in') == option %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div>
+    <label for="{{ prefix }}-slack">Are you in the Slack workspace</label>
+    <select id="{{ prefix }}-slack" name="slack_workspace" style="max-width: 10rem;">
+      <option value="">Select…</option>
+      {% for option in profile_yes_no_options %}
+        <option value="{{ option }}" {% if p.get('slack_workspace') == option %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>

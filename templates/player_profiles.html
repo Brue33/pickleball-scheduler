@@ -3,9 +3,29 @@
 {% block content %}
   <p><a href="{{ url_for('friends_group') }}">← Mitten Smash</a></p>
   <header class="pp-header">
-    <h1>Player Profiles</h1>
-    <p class="pp-tagline">Everyone in the group — tap a player to view their profile.</p>
+    <div class="pp-header-row">
+      <div>
+        <h1>Player Profiles</h1>
+        <p class="pp-tagline">Everyone in the group — tap a player to view their profile.</p>
+      </div>
+      <button type="button" class="btn" id="pp-add-toggle" aria-expanded="{{ 'true' if show_add else 'false' }}" aria-controls="pp-add-panel">
+        Add player
+      </button>
+    </div>
   </header>
+
+  <div id="pp-add-panel" class="pp-add-panel" {% if not show_add %}hidden{% endif %}>
+    <form method="post" action="{{ url_for('player_profiles_add') }}" class="pp-add-form">
+      {% with form_prefix='add', profile=empty_profile %}
+        {% include "_player_profile_fields.html" %}
+      {% endwith %}
+      <label for="pp-confirm-name">Type the full name again (to add this profile)</label>
+      <input type="text" id="pp-confirm-name" name="confirm_name" placeholder="e.g. Alex M — must match first name + initial" required style="max-width: 20rem;">
+      <button type="submit">Add profile</button>
+    </form>
+  </div>
+
+  {% include "_player_profile_skill_modal.html" %}
 
   <div class="fg-grid">
     {% for profile in profiles %}
@@ -29,6 +49,86 @@
     .pp-header { margin-bottom: 1.75rem; }
     .pp-header h1 { font-size: 1.75rem; margin-bottom: 0.35rem; }
     .pp-tagline { color: var(--muted); margin: 0; font-size: 1rem; }
+    .pp-header-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .pp-header-row .btn { margin-top: 0; }
+    .pp-add-panel {
+      margin-bottom: 1.5rem;
+      padding: 1rem 1.15rem;
+      background: var(--court);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+      max-width: 36rem;
+    }
+    .pp-form-grid { display: grid; gap: 0.85rem; margin-bottom: 0.85rem; }
+    .pp-form-row--name {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1rem;
+      align-items: flex-end;
+    }
+    .pp-label-with-help { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .pp-help-btn {
+      width: 1.35rem;
+      height: 1.35rem;
+      padding: 0;
+      margin: 0;
+      border-radius: 999px;
+      border: 2px solid var(--court-line);
+      background: var(--surface);
+      color: var(--accent);
+      font-size: 0.85rem;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .pp-help-btn:hover { border-color: var(--accent); opacity: 1; }
+    .pp-courts-fieldset {
+      margin: 0;
+      padding: 0.75rem 0.85rem;
+      border: 2px solid var(--court-line);
+      border-radius: 8px;
+    }
+    .pp-courts-fieldset legend {
+      padding: 0 0.25rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .pp-field-hint { margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--muted); }
+    .pp-court-checks { display: grid; gap: 0.35rem; margin-bottom: 0.65rem; }
+    .pp-check-label {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      color: var(--text);
+      font-size: 0.92rem;
+    }
+    .pp-check-label input { width: auto; max-width: none; margin: 0; }
+    .pp-skill-modal-content { max-width: 34rem; }
+    .pp-skill-image {
+      display: block;
+      width: 100%;
+      max-height: 14rem;
+      object-fit: contain;
+      margin-bottom: 0.85rem;
+      border-radius: 8px;
+      border: 1px solid var(--court-line);
+      background: #111;
+    }
+    .pp-skill-list {
+      margin: 0 0 1rem;
+      padding-left: 1.1rem;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .pp-skill-list li { margin-bottom: 0.45rem; }
+    .pp-skill-list span { color: var(--muted); }
+    .pp-skill-close { margin-top: 0; }
     .fg-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
@@ -77,4 +177,48 @@
       .fg-grid { grid-template-columns: 1fr; }
     }
   </style>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var toggle = document.getElementById('pp-add-toggle');
+      var panel = document.getElementById('pp-add-panel');
+      if (toggle && panel) {
+        toggle.addEventListener('click', function() {
+          var open = panel.hidden;
+          panel.hidden = !open;
+          toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          toggle.textContent = open ? 'Hide form' : 'Add player';
+          if (open) {
+            var nameInput = document.getElementById('add-first-name');
+            if (nameInput) nameInput.focus();
+          }
+        });
+        if (!panel.hidden) {
+          toggle.textContent = 'Hide form';
+        }
+      }
+
+      var modal = document.getElementById('pp-skill-modal');
+      document.querySelectorAll('[data-skill-help]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          if (!modal) return;
+          modal.hidden = false;
+          modal.setAttribute('aria-hidden', 'false');
+        });
+      });
+      if (modal) {
+        modal.querySelectorAll('[data-skill-close]').forEach(function(el) {
+          el.addEventListener('click', function() {
+            modal.hidden = true;
+            modal.setAttribute('aria-hidden', 'true');
+          });
+        });
+        modal.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape') {
+            modal.hidden = true;
+            modal.setAttribute('aria-hidden', 'true');
+          }
+        });
+      }
+    });
+  </script>
 {% endblock %}

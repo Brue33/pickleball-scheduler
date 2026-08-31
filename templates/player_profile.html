@@ -3,56 +3,61 @@
 {% block content %}
   <p><a href="{{ url_for('player_profiles_page') }}">← Player Profiles</a></p>
 
-  <header class="pp-view-header">
-    <span class="pp-avatar" aria-hidden="true">{{ player[0]|upper }}</span>
-    <h1>{{ player }}</h1>
-  </header>
+  <article class="pp-profile-card">
+    <header class="pp-view-header">
+      <span class="pp-avatar" aria-hidden="true">{{ player[0]|upper }}</span>
+      <h1>{{ profile_formatted_name(profile, player) }}</h1>
+    </header>
 
-  {% if not show_edit %}
-    <div class="pp-bio-panel">
-      {% if bio %}
-        <p class="pp-bio-text">{{ bio }}</p>
-      {% else %}
-        <p class="pp-bio-empty">No bio yet.</p>
-      {% endif %}
-    </div>
-    <button type="button" class="btn btn-secondary" id="pp-edit-toggle" aria-expanded="false" aria-controls="pp-edit-panel">
-      Edit profile
-    </button>
-    <div id="pp-edit-panel" class="pp-edit-panel" hidden>
-      <form method="post" action="{{ url_for('player_profile_page', player=player) }}">
-        <input type="hidden" name="player" value="{{ player|e }}">
-        <label for="confirm-name">Your name (to edit this profile)</label>
-        <input type="text" id="confirm-name" name="confirm_name" placeholder="e.g. {{ player|e }}" required style="max-width: 16rem;">
-        <label for="bio">Bio</label>
-        <textarea id="bio" name="bio" rows="6" placeholder="Years playing, handedness, paddle, location, etc." style="max-width: 32rem;">{{ bio|e }}</textarea>
-        <button type="submit">Save profile</button>
-      </form>
-    </div>
-  {% else %}
-    <div class="pp-edit-panel">
-      <form method="post" action="{{ url_for('player_profile_page', player=player) }}">
-        <input type="hidden" name="player" value="{{ player|e }}">
-        <label for="confirm-name">Your name (to edit this profile)</label>
-        <input type="text" id="confirm-name" name="confirm_name" placeholder="e.g. {{ player|e }}" required style="max-width: 16rem;">
-        <label for="bio">Bio</label>
-        <textarea id="bio" name="bio" rows="6" placeholder="Years playing, handedness, paddle, location, etc." style="max-width: 32rem;">{{ bio|e }}</textarea>
-        <button type="submit">Save profile</button>
-        <a href="{{ url_for('player_profile_page', player=player) }}" class="btn btn-secondary" style="margin-left: 0.5rem;">Cancel</a>
-      </form>
-    </div>
-  {% endif %}
+    {% if not show_edit %}
+      <div class="pp-info-panel">
+        {% if info_rows %}
+          <dl class="pp-info-rows">
+            {% for row in info_rows %}
+              <div class="pp-info-row">
+                <dt>{{ row.label }}</dt>
+                <dd>{{ row.value }}</dd>
+              </div>
+            {% endfor %}
+          </dl>
+        {% else %}
+          <p class="pp-info-empty">No profile info yet.</p>
+        {% endif %}
+      </div>
+      <button type="button" class="btn btn-secondary" id="pp-edit-toggle" aria-expanded="false" aria-controls="pp-edit-panel">
+        Edit profile
+      </button>
+      <div id="pp-edit-panel" class="pp-edit-panel" hidden>
+        {% include "player_profile_edit_form.html" %}
+      </div>
+    {% else %}
+      <div class="pp-edit-panel">
+        {% include "player_profile_edit_form.html" %}
+      </div>
+    {% endif %}
+  </article>
+
+  {% include "_player_profile_skill_modal.html" %}
 {% endblock %}
 
 {% block head %}
   <style>
+    .pp-profile-card {
+      max-width: 36rem;
+      background: var(--surface);
+      border: 2px solid var(--court-line);
+      border-radius: 12px;
+      padding: 1.15rem 1.25rem 1.25rem;
+    }
     .pp-view-header {
       display: flex;
       align-items: center;
       gap: 1rem;
-      margin-bottom: 1.25rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.85rem;
+      border-bottom: 1px solid var(--court-line);
     }
-    .pp-view-header h1 { margin: 0; font-size: 1.75rem; }
+    .pp-view-header h1 { margin: 0; font-size: 1.5rem; color: var(--accent); }
     .pp-avatar {
       display: inline-flex;
       align-items: center;
@@ -65,29 +70,122 @@
       color: var(--accent);
       font-size: 1.25rem;
       font-weight: 700;
+      flex-shrink: 0;
     }
-    .pp-bio-panel {
-      background: var(--surface);
-      border: 2px solid var(--court-line);
-      border-radius: 10px;
-      padding: 1rem 1.15rem;
-      max-width: 36rem;
-      margin-bottom: 1rem;
+    .pp-info-panel { margin-bottom: 1rem; }
+    .pp-info-rows { margin: 0; }
+    .pp-info-row { margin: 0.5rem 0; font-size: 0.95rem; line-height: 1.45; }
+    .pp-info-row dt {
+      display: block;
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.15rem;
     }
-    .pp-bio-text {
-      margin: 0;
-      white-space: pre-wrap;
-      line-height: 1.55;
-    }
-    .pp-bio-empty { margin: 0; color: var(--muted); font-style: italic; }
+    .pp-info-row dd { display: block; margin: 0; color: var(--text); }
+    .pp-info-empty { margin: 0; color: var(--muted); font-style: italic; }
     .pp-edit-panel {
       margin-top: 1rem;
       padding: 1rem 1.15rem;
       background: var(--court);
       border: 2px solid var(--court-line);
       border-radius: 10px;
-      max-width: 36rem;
     }
+    .pp-form-grid { display: grid; gap: 0.85rem; margin-bottom: 0.85rem; }
+    .pp-form-row--name {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1rem;
+      align-items: flex-end;
+    }
+    .pp-label-with-help { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .pp-help-btn {
+      width: 1.35rem;
+      height: 1.35rem;
+      padding: 0;
+      margin: 0;
+      border-radius: 999px;
+      border: 2px solid var(--court-line);
+      background: var(--surface);
+      color: var(--accent);
+      font-size: 0.85rem;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .pp-help-btn:hover { border-color: var(--accent); opacity: 1; }
+    .pp-courts-fieldset {
+      margin: 0;
+      padding: 0.75rem 0.85rem;
+      border: 2px solid var(--court-line);
+      border-radius: 8px;
+    }
+    .pp-courts-fieldset legend {
+      padding: 0 0.25rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .pp-field-hint { margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--muted); }
+    .pp-court-checks { display: grid; gap: 0.35rem; margin-bottom: 0.65rem; }
+    .pp-check-label {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      color: var(--text);
+      font-size: 0.92rem;
+    }
+    .pp-check-label input { width: auto; max-width: none; margin: 0; }
+    .pp-edit-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .pp-edit-actions .btn { margin-top: 1rem; }
+    .pp-delete-section {
+      margin-top: 1.25rem;
+      padding-top: 1.15rem;
+      border-top: 2px dashed var(--court-line);
+    }
+    .pp-delete-title {
+      margin: 0 0 0.35rem;
+      font-size: 1rem;
+      color: var(--error);
+    }
+    .pp-delete-note {
+      margin: 0 0 0.85rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .pp-delete-btn {
+      margin-top: 0.75rem;
+      background: transparent;
+      color: var(--error);
+      border-color: var(--error);
+    }
+    .pp-delete-btn:hover { background: rgba(229, 115, 115, 0.15); opacity: 1; }
+    .pp-skill-modal-content { max-width: 34rem; }
+    .pp-skill-image {
+      display: block;
+      width: 100%;
+      max-height: 14rem;
+      object-fit: contain;
+      margin-bottom: 0.85rem;
+      border-radius: 8px;
+      border: 1px solid var(--court-line);
+      background: #111;
+    }
+    .pp-skill-list {
+      margin: 0 0 1rem;
+      padding-left: 1.1rem;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .pp-skill-list li { margin-bottom: 0.45rem; }
+    .pp-skill-list span { color: var(--muted); }
+    .pp-skill-close { margin-top: 0; }
   </style>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
@@ -102,6 +200,29 @@
           if (open) {
             var nameInput = document.getElementById('confirm-name');
             if (nameInput) nameInput.focus();
+          }
+        });
+      }
+
+      var modal = document.getElementById('pp-skill-modal');
+      document.querySelectorAll('[data-skill-help]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          if (!modal) return;
+          modal.hidden = false;
+          modal.setAttribute('aria-hidden', 'false');
+        });
+      });
+      if (modal) {
+        modal.querySelectorAll('[data-skill-close]').forEach(function(el) {
+          el.addEventListener('click', function() {
+            modal.hidden = true;
+            modal.setAttribute('aria-hidden', 'true');
+          });
+        });
+        modal.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape') {
+            modal.hidden = true;
+            modal.setAttribute('aria-hidden', 'true');
           }
         });
       }
