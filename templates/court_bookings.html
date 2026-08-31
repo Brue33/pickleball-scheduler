@@ -67,15 +67,26 @@
         <a href="{{ url_for('court_bookings_page', edit='1', court=court.id) }}#courts"
            class="fg-card {% if editing_court_id == court.id %}fg-card-editing{% endif %}">
           {% include "_court_card_icon.html" %}
-          <h2 class="fg-card-title">{{ court.name }}</h2>
+          <h2 class="fg-card-title">{{ court.card_title }}</h2>
           <p class="fg-card-desc">{{ court.card_desc }}</p>
           <p class="fg-card-meta fg-meta-muted">Click to edit</p>
         </a>
       {% else %}
         <article class="fg-card fg-card-court" id="court-card-{{ court.id }}" data-court-id="{{ court.id }}" tabindex="0" role="button" aria-expanded="false">
           {% include "_court_card_icon.html" %}
-          <h2 class="fg-card-title">{{ court.name }}</h2>
+          <h2 class="fg-card-title">{{ court.card_title }}</h2>
+          {% if court.nickname %}
+            <p class="cb-card-official-name">{{ court.name }}</p>
+          {% endif %}
           <p class="fg-card-desc">{{ court.card_desc }}</p>
+          <button type="button" class="cb-rating-summary cb-rate-trigger" data-court-id="{{ court.id }}" aria-label="Rate {{ court.card_title|e }}">
+            {% if court.rating_summary %}
+              <span class="cb-stars" aria-hidden="true">{{ court.rating_stars }}</span>
+              <span class="cb-rating-text">{{ court.rating_summary.average }} <span class="cb-rating-count">({{ court.rating_summary.count }} rating{{ 's' if court.rating_summary.count != 1 else '' }})</span></span>
+            {% else %}
+              <span class="cb-rating-text cb-rating-empty">Rate this court</span>
+            {% endif %}
+          </button>
           <p class="fg-card-meta {{ court.meta_class }}">{{ court.meta }}</p>
           <div class="cb-card-actions" hidden>
             {% if court.bookable and court.external_url %}
@@ -87,7 +98,7 @@
             <button type="button" class="btn btn-secondary cb-action-btn cb-show-info" data-court-id="{{ court.id }}">See court info</button>
           </div>
           <div id="court-info-{{ court.id }}" class="cb-info-detail" hidden>
-            <h3 class="cb-info-title">{{ court.name }}</h3>
+            <h3 class="cb-info-title">{{ court.card_title }}</h3>
             <dl class="cb-info-rows">
               {% for row in court.info_rows %}
                 <div class="cb-info-row">
@@ -102,6 +113,49 @@
                 </div>
               {% endfor %}
             </dl>
+
+            <section class="cb-ratings-section">
+              <h4 class="cb-ratings-heading">Court ratings</h4>
+              {% if court.ratings %}
+                <ul class="cb-ratings-list">
+                  {% for rating in court.ratings %}
+                    <li class="cb-rating-item">
+                      <p class="cb-rating-item-header">
+                        <strong>{{ rating.player }}</strong>
+                        <span class="cb-stars" aria-label="{{ rating.stars }} out of 5 stars">{{ '★' * rating.stars }}{{ '☆' * (5 - rating.stars) }}</span>
+                      </p>
+                      {% if rating.comment %}
+                        <p class="cb-rating-comment">{{ rating.comment }}</p>
+                      {% endif %}
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="cb-ratings-empty">No ratings yet — be the first!</p>
+              {% endif %}
+
+              <form method="post" action="{{ url_for('court_bookings_rate') }}" class="cb-rate-form" data-existing-ratings="{{ court.ratings_lookup|tojson }}">
+                <input type="hidden" name="court_id" value="{{ court.id }}">
+                <h5 class="cb-rate-form-title">Your rating</h5>
+                <label for="rate-player-{{ court.id }}">Your name</label>
+                <select id="rate-player-{{ court.id }}" name="player" required style="max-width: 16rem;">
+                  <option value="">Select…</option>
+                  {% for p in player_list %}
+                    <option value="{{ p|e }}">{{ p }}</option>
+                  {% endfor %}
+                </select>
+                <label for="rate-stars-{{ court.id }}">Rating</label>
+                <select id="rate-stars-{{ court.id }}" name="stars" required style="max-width: 10rem;">
+                  <option value="">Select…</option>
+                  {% for n in range(5, 0, -1) %}
+                    <option value="{{ n }}">{{ n }} star{{ 's' if n != 1 else '' }}</option>
+                  {% endfor %}
+                </select>
+                <label for="rate-comment-{{ court.id }}">Why? <span class="cb-optional">(optional)</span></label>
+                <textarea id="rate-comment-{{ court.id }}" name="comment" rows="3" maxlength="300" placeholder="Great courts, easy parking, etc." style="max-width: 28rem;"></textarea>
+                <button type="submit" class="btn cb-rate-submit">Submit rating</button>
+              </form>
+            </section>
           </div>
         </article>
       {% endif %}
@@ -204,6 +258,66 @@
       margin-right: 0.35rem;
     }
     .cb-info-row dd { display: inline; margin: 0; color: var(--text); }
+    .cb-card-official-name {
+      margin: -0.35rem 0 0.5rem 0;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .cb-rating-summary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin: 0 0 0.5rem 0;
+      padding: 0.25rem 0.5rem;
+      background: transparent;
+      border: 1px solid var(--court-line);
+      border-radius: 6px;
+      color: var(--accent);
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    .cb-rating-summary:hover { border-color: var(--accent); opacity: 1; }
+    .cb-stars { color: var(--accent); letter-spacing: 0.05em; }
+    .cb-rating-count { color: var(--muted); font-size: 0.85rem; }
+    .cb-rating-empty { color: var(--muted); }
+    .cb-ratings-section {
+      margin-top: 1rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--court-line);
+    }
+    .cb-ratings-heading { margin: 0 0 0.65rem; font-size: 0.95rem; color: var(--accent); }
+    .cb-ratings-list { margin: 0 0 1rem; padding: 0; list-style: none; }
+    .cb-rating-item {
+      margin-bottom: 0.65rem;
+      padding: 0.55rem 0.65rem;
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 6px;
+    }
+    .cb-rating-item-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.35rem;
+      margin: 0;
+      font-size: 0.9rem;
+    }
+    .cb-rating-comment {
+      margin: 0.35rem 0 0;
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .cb-ratings-empty { margin: 0 0 1rem; color: var(--muted); font-size: 0.9rem; font-style: italic; }
+    .cb-rate-form {
+      padding: 0.75rem 0.85rem;
+      background: var(--court);
+      border: 2px solid var(--court-line);
+      border-radius: 8px;
+    }
+    .cb-rate-form-title { margin: 0 0 0.65rem; font-size: 0.9rem; color: var(--text); }
+    .cb-rate-form label { margin-top: 0.5rem; }
+    .cb-rate-submit { margin-top: 0.75rem; }
     .cb-copy-toast {
       position: fixed;
       bottom: 1.25rem;
@@ -342,7 +456,7 @@
       }
       courtCards.forEach(function(card) {
         card.addEventListener('click', function(e) {
-          if (e.target.closest('.cb-card-actions') || e.target.closest('.cb-info-detail')) return;
+          if (e.target.closest('.cb-card-actions') || e.target.closest('.cb-info-detail') || e.target.closest('.cb-rate-trigger')) return;
           var actions = card.querySelector('.cb-card-actions');
           var info = card.querySelector('.cb-info-detail');
           var wasOpen = card.classList.contains('fg-card-open');
@@ -364,15 +478,72 @@
       document.querySelectorAll('.cb-show-info').forEach(function(btn) {
         btn.addEventListener('click', function(e) {
           e.stopPropagation();
-          var courtId = btn.getAttribute('data-court-id');
-          var card = document.getElementById('court-card-' + courtId);
-          if (!card) return;
-          var info = card.querySelector('.cb-info-detail');
-          if (!info) return;
-          var show = info.hidden;
-          document.querySelectorAll('.cb-info-detail').forEach(function(el) { el.hidden = true; });
-          info.hidden = !show;
-          if (!info.hidden) info.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          openCourtInfo(btn.getAttribute('data-court-id'), true);
+        });
+      });
+
+      function openCourtInfo(courtId, showInfo) {
+        var card = document.getElementById('court-card-' + courtId);
+        if (!card) return;
+        closeAllCourtCards();
+        card.classList.add('fg-card-open');
+        card.setAttribute('aria-expanded', 'true');
+        var actions = card.querySelector('.cb-card-actions');
+        var info = card.querySelector('.cb-info-detail');
+        if (actions) actions.hidden = false;
+        if (info && showInfo) {
+          info.hidden = false;
+          info.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+
+      document.querySelectorAll('.cb-rate-trigger').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          openCourtInfo(btn.getAttribute('data-court-id'), true);
+          var card = document.getElementById('court-card-' + btn.getAttribute('data-court-id'));
+          var playerSelect = card && card.querySelector('.cb-rate-form select[name="player"]');
+          if (playerSelect) playerSelect.focus();
+        });
+      });
+
+      document.querySelectorAll('.cb-rate-form').forEach(function(form) {
+        var existing = {};
+        try {
+          existing = JSON.parse(form.getAttribute('data-existing-ratings') || '{}');
+        } catch (err) { existing = {}; }
+        var playerSelect = form.querySelector('select[name="player"]');
+        var starsSelect = form.querySelector('select[name="stars"]');
+        var commentInput = form.querySelector('textarea[name="comment"]');
+        var submitBtn = form.querySelector('.cb-rate-submit');
+
+        function fillExisting(player) {
+          var key = (player || '').toLowerCase();
+          var row = existing[key];
+          if (row) {
+            if (starsSelect) starsSelect.value = String(row.stars || '');
+            if (commentInput) commentInput.value = row.comment || '';
+            if (submitBtn) submitBtn.textContent = 'Update rating';
+          } else {
+            if (starsSelect) starsSelect.value = '';
+            if (commentInput) commentInput.value = '';
+            if (submitBtn) submitBtn.textContent = 'Submit rating';
+          }
+        }
+
+        if (playerSelect) {
+          playerSelect.addEventListener('change', function() {
+            fillExisting(playerSelect.value);
+          });
+        }
+
+        form.addEventListener('submit', function(e) {
+          var player = playerSelect ? playerSelect.value : '';
+          if (player && existing[player.toLowerCase()]) {
+            if (!confirm('You already rated this court. Update your current rating?')) {
+              e.preventDefault();
+            }
+          }
         });
       });
 
@@ -422,6 +593,9 @@
       {% if editing_court_id %}
       var editPanelEl = document.getElementById('edit-court-panel');
       if (editPanelEl) editPanelEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      {% endif %}
+      {% if open_court_id %}
+      openCourtInfo({{ open_court_id|tojson }}, true);
       {% endif %}
     });
   </script>

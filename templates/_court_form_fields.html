@@ -5,6 +5,10 @@
   <input type="text" id="{{ form_prefix }}-court-name" name="name" value="{{ court.get('name', '')|e }}" placeholder="e.g. YMCA Green Lake" required maxlength="80">
 </div>
 <div>
+  <label for="{{ form_prefix }}-court-nickname">Court nickname <span class="cb-optional">(optional)</span></label>
+  <input type="text" id="{{ form_prefix }}-court-nickname" name="nickname" value="{{ court.get('nickname', '')|e }}" placeholder="e.g. The Y" maxlength="80">
+</div>
+<div>
   <label for="{{ form_prefix }}-court-city">City</label>
   <input type="text" id="{{ form_prefix }}-court-city" name="city" value="{{ court.get('city', '')|e }}" placeholder="e.g. Seattle" required maxlength="80">
 </div>

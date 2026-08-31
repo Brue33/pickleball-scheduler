@@ -3121,6 +3121,57 @@ def _court_booking_url_valid(url):
     return url.startswith("http://") or url.startswith("https://")
 
 
+def _normalize_court_ratings(court):
+    """One rating per player; invalid entries dropped."""
+    raw = court.get("ratings")
+    if not isinstance(raw, list):
+        return []
+    by_player = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        player = resolve_site_player(item.get("player", ""))
+        if not player:
+            continue
+        try:
+            stars = int(item.get("stars", 0))
+        except (TypeError, ValueError):
+            continue
+        if stars < 1 or stars > 5:
+            continue
+        by_player[player.lower()] = {
+            "player": player,
+            "stars": stars,
+            "comment": (item.get("comment") or "").strip()[:300],
+            "updated_at": (item.get("updated_at") or "").strip(),
+        }
+    return sorted(by_player.values(), key=lambda r: r["player"].lower())
+
+
+def _court_rating_summary(ratings):
+    if not ratings:
+        return None
+    total = sum(r["stars"] for r in ratings)
+    return {
+        "average": round(total / len(ratings), 1),
+        "count": len(ratings),
+    }
+
+
+def _court_stars_display(stars_value):
+    """Integer 1–5 or average rounded to nearest star for display."""
+    try:
+        n = int(round(float(stars_value)))
+    except (TypeError, ValueError):
+        n = 0
+    n = max(0, min(5, n))
+    return "★" * n + "☆" * (5 - n)
+
+
+def _court_ratings_lookup(ratings):
+    return {r["player"].lower(): r for r in ratings}
+
+
 def _validate_upload_image(image_file):
     """Validate an uploaded image file. Returns (file, error message)."""
     if not image_file or not image_file.filename:
@@ -3154,6 +3205,8 @@ def _delete_court_image(image_name):
 
 def format_court_booking_display(court):
     name = (court.get("name") or "").strip()
+    nickname = (court.get("nickname") or "").strip()
+    card_title = nickname or name
     city = (court.get("city") or "").strip()
     address = (court.get("address") or "").strip()
     indoor_outdoor = court.get("indoor_outdoor", "indoor")
@@ -3202,8 +3255,11 @@ def format_court_booking_display(court):
         copy_address = f"{address}, {city}" if city else address
 
     info_rows = [
-        {"label": "City", "value": city},
+        {"label": "Name", "value": name},
     ]
+    if nickname:
+        info_rows.append({"label": "Nickname", "value": nickname})
+    info_rows.append({"label": "City", "value": city})
     if address:
         info_rows.append({"label": "Address", "value": address})
     if num_courts is not None and num_courts != "":
@@ -3225,11 +3281,22 @@ def format_court_booking_display(court):
     if bookable and booking_url:
         info_rows.append({"label": "Booking link", "value": booking_url, "is_link": True})
 
-    icon = name[0].upper() if name else "C"
+    ratings = _normalize_court_ratings(court)
+    rating_summary = _court_rating_summary(ratings)
+    if rating_summary:
+        info_rows.append({
+            "label": "Average rating",
+            "value": f"{_court_stars_display(rating_summary['average'])} {rating_summary['average']} ({rating_summary['count']} rating{'s' if rating_summary['count'] != 1 else ''})",
+        })
+
+    icon = card_title[0].upper() if card_title else "C"
     image = (court.get("image") or "").strip()
+    ratings_lookup = _court_ratings_lookup(ratings)
     return {
         **court,
         "name": name,
+        "nickname": nickname,
+        "card_title": card_title,
         "city": city,
         "address": address,
         "icon": icon,
@@ -3244,6 +3311,10 @@ def format_court_booking_display(court):
         "has_address": bool(address),
         "copy_address": copy_address,
         "info_rows": info_rows,
+        "ratings": ratings,
+        "ratings_lookup": ratings_lookup,
+        "rating_summary": rating_summary,
+        "rating_stars": _court_stars_display(rating_summary["average"]) if rating_summary else "",
     }
 
 
@@ -3263,6 +3334,7 @@ def _court_bookings_redirect(show_add=False, edit_mode=False, court_id=None, edi
 def _parse_court_form_data(form):
     """Validate add/edit court form. Returns (data dict, error message)."""
     name = form.get("name", "").strip()
+    nickname = form.get("nickname", "").strip()
     city = form.get("city", "").strip()
     address = form.get("address", "").strip()
     num_courts_raw = form.get("num_courts", "").strip()
@@ -3302,6 +3374,7 @@ def _parse_court_form_data(form):
 
     return {
         "name": name[:80],
+        "nickname": nickname[:80],
         "city": city[:80],
         "address": address[:120],
         "num_courts": num_courts,
@@ -3330,6 +3403,7 @@ def court_bookings_page():
     if editing_court_id and edit_mode and not editing_court:
         flash("That court could not be found.", "error")
         editing_court_id = ""
+    open_court_id = (request.args.get("open_court") or "").strip()
     return render_template(
         "court_bookings.html",
         courts=courts,
@@ -3338,6 +3412,8 @@ def court_bookings_page():
         edit_mode=edit_mode,
         editing_court_id=editing_court_id if editing_court else "",
         editing_court=editing_court,
+        open_court_id=open_court_id,
+        player_list=all_site_players(),
         indoor_outdoor_options=COURT_INDOOR_OUTDOOR_OPTIONS,
         net_style_options=COURT_NET_STYLE_OPTIONS,
         cost_options=COURT_COST_OPTIONS,
@@ -3363,6 +3439,7 @@ def court_bookings_add():
         "id": court_id,
         **data,
         "image": image_name,
+        "ratings": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     save_court_bookings(courts)
@@ -3416,9 +3493,57 @@ def court_bookings_edit():
         if old_image and old_image != new_image:
             _delete_court_image(old_image)
         target["image"] = new_image
+    target["ratings"] = _normalize_court_ratings(target)
     save_court_bookings(courts)
     flash(f"Updated {data['name']}.", "success")
     return _court_bookings_redirect(edit_mode=True)
+
+
+@app.route("/court-bookings/rate", methods=["POST"])
+def court_bookings_rate():
+    """Rate a court (one rating per player; updates if already rated)."""
+    court_id = request.form.get("court_id", "").strip()
+    player = resolve_site_player(request.form.get("player", ""))
+    stars_raw = request.form.get("stars", "").strip()
+    comment = (request.form.get("comment") or "").strip()[:300]
+
+    if not court_id:
+        flash("Missing court.", "error")
+        return _court_bookings_redirect()
+    if not player:
+        flash("Select your name from the player list.", "error")
+        return redirect(url_for("court_bookings_page", open_court=court_id) + "#courts")
+    try:
+        stars = int(stars_raw)
+    except (TypeError, ValueError):
+        flash("Select a rating from 1 to 5 stars.", "error")
+        return redirect(url_for("court_bookings_page", open_court=court_id) + "#courts")
+    if stars < 1 or stars > 5:
+        flash("Rating must be between 1 and 5 stars.", "error")
+        return redirect(url_for("court_bookings_page", open_court=court_id) + "#courts")
+
+    courts = load_court_bookings()
+    target = next((c for c in courts if c.get("id") == court_id), None)
+    if not target:
+        flash("That court could not be found.", "error")
+        return _court_bookings_redirect()
+
+    ratings = _normalize_court_ratings(target)
+    existing = next((r for r in ratings if r["player"].lower() == player.lower()), None)
+    ratings = [r for r in ratings if r["player"].lower() != player.lower()]
+    ratings.append({
+        "player": player,
+        "stars": stars,
+        "comment": comment,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    target["ratings"] = ratings
+    save_court_bookings(courts)
+    if existing:
+        flash(f"Updated {player}'s rating for {target.get('nickname') or target.get('name')}.", "success")
+    else:
+        flash(f"Thanks for rating {target.get('nickname') or target.get('name')}!", "success")
+    return redirect(url_for("court_bookings_page", open_court=court_id) + "#courts")
 
 
 @app.route("/court-bookings/images/<path:filename>")
