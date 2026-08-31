@@ -506,17 +506,19 @@ def profile_image_url(profile):
 
 
 def profile_card_summary_rows(profile, fallback_name=""):
-    """Short fields shown on profile hub cards."""
+    """Short fields shown on profile hub cards (only non-empty values)."""
     p = normalize_player_profile(profile)
-    spouse = "—"
-    if p.get("spouse"):
-        spouse = resolve_site_player(p["spouse"]) or p["spouse"]
-    return [
-        {"label": "Skill", "value": p.get("skill") or "—"},
-        {"label": "Location", "value": p.get("location") or "—"},
-        {"label": "Spouse", "value": spouse},
-        {"label": "Open to drop-in", "value": p.get("open_to_drop_in") or "—"},
-    ]
+    rows = []
+    if (p.get("skill") or "").strip():
+        rows.append({"label": "Skill", "value": p["skill"].strip()})
+    if (p.get("location") or "").strip():
+        rows.append({"label": "Location", "value": p["location"].strip()})
+    if (p.get("spouse") or "").strip():
+        spouse = resolve_site_player(p["spouse"]) or p["spouse"].strip()
+        rows.append({"label": "Spouse", "value": spouse})
+    if (p.get("open_to_drop_in") or "").strip():
+        rows.append({"label": "Open to drop-in", "value": p["open_to_drop_in"].strip()})
+    return rows
 
 
 def format_player_profile_card(name, stored_profile):
