@@ -3,18 +3,78 @@
     {
       "label": "Week 1",
       "players": {
-        "James M": {"points_scored": 55, "wins": 5, "losses": 0},
-        "Caleb K": {"points_scored": 10, "wins": 0, "losses": 5},
-        "Bryan R": {"points_scored": 29, "wins": 0, "losses": 5},
-        "Dominick C": {"points_scored": 55, "wins": 5, "losses": 0},
-        "Joe T": {"points_scored": 55, "wins": 5, "losses": 0},
-        "Tracey D": {"points_scored": 6, "wins": 0, "losses": 5},
-        "Ryan D": {"points_scored": 55, "wins": 5, "losses": 0},
-        "Dietrich H": {"points_scored": 10, "wins": 0, "losses": 5},
-        "Brett R": {"points_scored": 29, "wins": 0, "losses": 5},
-        "Chris K": {"points_scored": 55, "wins": 5, "losses": 0},
-        "Nicole R": {"points_scored": 55, "wins": 5, "losses": 0},
-        "Casey T": {"points_scored": 6, "wins": 0, "losses": 5}
+        "James M": {
+          "points_scored": 55,
+          "wins": 5,
+          "losses": 0,
+          "sub": false
+        },
+        "Caleb K": {
+          "points_scored": 10,
+          "wins": 0,
+          "losses": 5,
+          "sub": false
+        },
+        "Bryan R": {
+          "points_scored": 29,
+          "wins": 0,
+          "losses": 5,
+          "sub": false
+        },
+        "Dominick C": {
+          "points_scored": 55,
+          "wins": 5,
+          "losses": 0,
+          "sub": false
+        },
+        "Joe T": {
+          "points_scored": 55,
+          "wins": 5,
+          "losses": 0,
+          "sub": false
+        },
+        "Tracey D": {
+          "points_scored": 6,
+          "wins": 0,
+          "losses": 5,
+          "sub": false
+        },
+        "Ryan D": {
+          "points_scored": 55,
+          "wins": 5,
+          "losses": 0,
+          "sub": false
+        },
+        "Dietrich H": {
+          "points_scored": 10,
+          "wins": 0,
+          "losses": 5,
+          "sub": false
+        },
+        "Brett R": {
+          "points_scored": 29,
+          "wins": 0,
+          "losses": 5,
+          "sub": false
+        },
+        "Chris K": {
+          "points_scored": 55,
+          "wins": 5,
+          "losses": 0,
+          "sub": false
+        },
+        "Nicole R": {
+          "points_scored": 55,
+          "wins": 5,
+          "losses": 0,
+          "sub": false
+        },
+        "Casey T": {
+          "points_scored": 6,
+          "wins": 0,
+          "losses": 5,
+          "sub": false
+        }
       }
     }
   ]

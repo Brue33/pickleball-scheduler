@@ -103,7 +103,7 @@
 
     <section id="enter-week" class="ml-section">
       <h2 class="ml-section-title">Enter weekly scores</h2>
-      <p class="ml-section-sub">Enter each player’s total points, wins, and losses for the week (same as the paper sheets).</p>
+      <p class="ml-section-sub">Enter each player’s total points, wins, and losses for the week. Check <strong>Sub</strong> if a substitute played in that player’s spot.</p>
       {% if not schedule_authenticated %}
         <form method="post" action="{{ url_for('mens_league_standings_unlock') }}" class="ml-unlock-form">
           <label for="ml-password">Schedule password</label>
@@ -124,6 +124,7 @@
                 <th>Points</th>
                 <th>Wins</th>
                 <th>Losses</th>
+                <th>Sub</th>
               </tr>
             </thead>
             <tbody>
@@ -134,6 +135,12 @@
                   <td><input type="number" name="points_{{ num }}" min="0" value="0" style="max-width: 5rem;"></td>
                   <td><input type="number" name="wins_{{ num }}" min="0" value="0" style="max-width: 4rem;"></td>
                   <td><input type="number" name="losses_{{ num }}" min="0" value="0" style="max-width: 4rem;"></td>
+                  <td class="ml-sub-cell">
+                    <label class="ml-sub-check">
+                      <input type="checkbox" name="sub_{{ num }}" value="1">
+                      <span class="ml-sr-only">Sub for {{ name }}</span>
+                    </label>
+                  </td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -165,19 +172,23 @@
                    {% if not loop.first %}hidden{% endif %}
                    role="tabpanel">
             <h3 class="ml-week-title">{{ week.label }} results</h3>
+            {% if week.has_subs %}
+              <p class="ml-week-note">Players marked Sub had a substitute that week.</p>
+            {% endif %}
             <table class="ml-table">
               <thead>
-                <tr><th>Place</th><th>#</th><th>Player</th><th>Pts</th><th>W</th><th>L</th></tr>
+                <tr><th>Place</th><th>#</th><th>Player</th><th>Pts</th><th>W</th><th>L</th><th>Sub</th></tr>
               </thead>
               <tbody>
                 {% for row in week.players %}
-                  <tr>
+                  <tr {% if row.sub %}class="ml-row-sub"{% endif %}>
                     <td>{{ row.position }}</td>
                     <td>{{ row.number }}</td>
-                    <td>{{ row.name }}</td>
+                    <td>{{ row.name }}{% if row.sub %} <span class="ml-sub-badge">Sub</span>{% endif %}</td>
                     <td><strong>{{ row.points_scored }}</strong></td>
                     <td>{{ row.wins }}</td>
                     <td>{{ row.losses }}</td>
+                    <td>{% if row.sub %}Yes{% else %}—{% endif %}</td>
                   </tr>
                 {% endfor %}
               </tbody>
@@ -374,6 +385,45 @@
     .ml-unlock-row { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: flex-end; }
     .ml-unlock-row .btn { margin-top: 0; }
     .ml-score-table input { margin-top: 0; }
+    .ml-sub-cell { text-align: center; width: 3.5rem; }
+    .ml-sub-check {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      cursor: pointer;
+    }
+    .ml-sub-check input {
+      width: 1.1rem;
+      height: 1.1rem;
+      max-width: none;
+      margin: 0;
+      accent-color: var(--accent);
+    }
+    .ml-sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      border: 0;
+    }
+    .ml-sub-badge {
+      display: inline-block;
+      margin-left: 0.35rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      background: rgba(184, 233, 134, 0.2);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .ml-row-sub td { color: var(--text); }
     .ml-empty { color: var(--muted); font-style: italic; }
     @media (max-width: 480px) {
       .fg-grid { grid-template-columns: 1fr; }

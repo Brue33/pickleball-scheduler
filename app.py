@@ -2090,7 +2090,10 @@ def build_mens_league_schedule():
 
 
 def _mens_league_player_defaults():
-    return {name: {"points_scored": 0, "wins": 0, "losses": 0} for name in MENS_LEAGUE_ROSTER.values()}
+    return {
+        name: {"points_scored": 0, "wins": 0, "losses": 0, "sub": False}
+        for name in MENS_LEAGUE_ROSTER.values()
+    }
 
 
 def load_mens_league_weeks():
@@ -2121,6 +2124,7 @@ def load_mens_league_weeks():
                     "points_scored": max(0, int(entry.get("points_scored", 0) or 0)),
                     "wins": max(0, int(entry.get("wins", 0) or 0)),
                     "losses": max(0, int(entry.get("losses", 0) or 0)),
+                    "sub": bool(entry.get("sub")),
                 }
         weeks.append({
             "label": (week.get("label") or "").strip() or f"Week {len(weeks) + 1}",
@@ -2197,6 +2201,7 @@ def mens_league_week_results_display(weeks):
                 "points_scored": int(entry.get("points_scored", 0) or 0),
                 "wins": int(entry.get("wins", 0) or 0),
                 "losses": int(entry.get("losses", 0) or 0),
+                "sub": bool(entry.get("sub")),
             })
         # Sort week standings by points then wins (same as season board)
         ranked = sorted(
@@ -2210,6 +2215,7 @@ def mens_league_week_results_display(weeks):
             "label": label,
             "week_number": _mens_league_week_number_from_label(label),
             "players": ranked,
+            "has_subs": any(r["sub"] for r in ranked),
         })
     return display
 
@@ -2273,6 +2279,7 @@ def mens_league_add_week():
             "points_scored": max(0, points),
             "wins": max(0, wins),
             "losses": max(0, losses),
+            "sub": request.form.get(f"sub_{num}") == "1",
         }
     weeks.append({"label": week_label, "players": players})
     save_mens_league_weeks(weeks)
