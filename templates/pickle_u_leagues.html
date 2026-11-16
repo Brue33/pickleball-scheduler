@@ -104,7 +104,7 @@
     {% if mens_edit_week %}
       <section id="edit-week" class="ml-section">
         <h2 class="ml-section-title">Edit {{ mens_edit_week.label }}</h2>
-        <p class="ml-section-sub">Update points, wins, losses, and Sub markers for this past week.</p>
+        <p class="ml-section-sub">Update each team once — both partners share points, wins, and losses. Check Sub for a replaced roster player.</p>
         {% if not schedule_authenticated %}
           <form method="post" action="{{ url_for('mens_league_standings_unlock') }}" class="ml-unlock-form">
             <input type="hidden" name="edit_week" value="{{ mens_edit_week_index }}">
@@ -117,37 +117,9 @@
         {% else %}
           <form method="post" action="{{ url_for('mens_league_edit_week') }}" class="ml-score-form">
             <input type="hidden" name="week_index" value="{{ mens_edit_week_index }}">
-            <label for="edit_week_label">Week label</label>
-            <input type="text" id="edit_week_label" name="week_label" value="{{ mens_edit_week.label|e }}" required style="max-width: 12rem;">
-            <table class="ml-table ml-score-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Player</th>
-                  <th>Points</th>
-                  <th>Wins</th>
-                  <th>Losses</th>
-                  <th>Sub</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in mens_edit_week.edit_players %}
-                  <tr>
-                    <td>{{ row.number }}</td>
-                    <td>{{ row.name }}</td>
-                    <td><input type="number" name="points_{{ row.number }}" min="0" value="{{ row.points_scored }}" style="max-width: 5rem;"></td>
-                    <td><input type="number" name="wins_{{ row.number }}" min="0" value="{{ row.wins }}" style="max-width: 4rem;"></td>
-                    <td><input type="number" name="losses_{{ row.number }}" min="0" value="{{ row.losses }}" style="max-width: 4rem;"></td>
-                    <td class="ml-sub-cell">
-                      <label class="ml-sub-check">
-                        <input type="checkbox" name="sub_{{ row.number }}" value="1" {% if row.sub %}checked{% endif %}>
-                        <span class="ml-sr-only">Sub for {{ row.name }}</span>
-                      </label>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+            {% with form_weeks=mens_edit_score_form_weeks, active_week=(mens_edit_week.week_number or 1), prefix='edit', include_week_select=False %}
+              {% include "_mens_league_team_score_fields.html" %}
+            {% endwith %}
             <div class="ml-edit-actions">
               <button type="submit">Save changes</button>
               <a href="{{ url_for('pickle_u_leagues', tab='mens') }}#week-results-{{ mens_edit_week_index }}" class="btn btn-secondary">Cancel</a>
@@ -159,7 +131,7 @@
 
     <section id="enter-week" class="ml-section">
       <h2 class="ml-section-title">Enter weekly scores</h2>
-      <p class="ml-section-sub">Enter each player’s total points, wins, and losses for the week. Check <strong>Sub</strong> if a substitute played in that player’s spot.</p>
+      <p class="ml-section-sub">Pick the week, then enter points / wins / losses once per team — both partners get the same totals. Check Sub only for the roster player who was replaced.</p>
       {% if not schedule_authenticated %}
         <form method="post" action="{{ url_for('mens_league_standings_unlock') }}" class="ml-unlock-form">
           <label for="ml-password">Schedule password</label>
@@ -169,38 +141,10 @@
           </div>
         </form>
       {% else %}
-        <form method="post" action="{{ url_for('mens_league_add_week') }}" class="ml-score-form">
-          <label for="week_label">Week label</label>
-          <input type="text" id="week_label" name="week_label" value="{{ mens_next_week_label|e }}" required style="max-width: 12rem;">
-          <table class="ml-table ml-score-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Player</th>
-                <th>Points</th>
-                <th>Wins</th>
-                <th>Losses</th>
-                <th>Sub</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for num, name in mens_roster %}
-                <tr>
-                  <td>{{ num }}</td>
-                  <td>{{ name }}</td>
-                  <td><input type="number" name="points_{{ num }}" min="0" value="0" style="max-width: 5rem;"></td>
-                  <td><input type="number" name="wins_{{ num }}" min="0" value="0" style="max-width: 4rem;"></td>
-                  <td><input type="number" name="losses_{{ num }}" min="0" value="0" style="max-width: 4rem;"></td>
-                  <td class="ml-sub-cell">
-                    <label class="ml-sub-check">
-                      <input type="checkbox" name="sub_{{ num }}" value="1">
-                      <span class="ml-sr-only">Sub for {{ name }}</span>
-                    </label>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        <form method="post" action="{{ url_for('mens_league_add_week') }}" class="ml-score-form" id="ml-add-score-form">
+          {% with form_weeks=mens_score_form_weeks, active_week=mens_next_week_number, prefix='add', include_week_select=True %}
+            {% include "_mens_league_team_score_fields.html" %}
+          {% endwith %}
           <button type="submit">Save week results</button>
         </form>
       {% endif %}
@@ -459,6 +403,66 @@
       text-decoration: none;
     }
     .ml-edit-week-btn:hover { text-decoration: none; opacity: 0.9; }
+    .ml-team-score-week { margin-top: 1rem; }
+    .ml-team-score-court {
+      margin-bottom: 1rem;
+      padding: 0.85rem 0.95rem;
+      background: var(--court);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+    }
+    .ml-team-score-court-title {
+      margin: 0 0 0.65rem;
+      font-size: 0.95rem;
+      color: var(--accent);
+    }
+    .ml-team-score-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+      gap: 0.75rem;
+    }
+    .ml-team-score-card {
+      background: var(--surface);
+      border: 1px solid var(--court-line);
+      border-radius: 8px;
+      padding: 0.75rem 0.85rem;
+    }
+    .ml-team-score-names {
+      margin: 0;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.35;
+    }
+    .ml-team-score-fields {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem 0.85rem;
+      margin-top: 0.65rem;
+    }
+    .ml-team-score-fields label {
+      margin-top: 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .ml-team-score-fields input { display: block; margin-top: 0.2rem; }
+    .ml-team-sub-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 0.85rem;
+      align-items: center;
+      margin-top: 0.75rem;
+      padding-top: 0.65rem;
+      border-top: 1px dashed var(--court-line);
+    }
+    .ml-team-sub-label {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .ml-sub-check-named {
+      gap: 0.35rem;
+      font-size: 0.85rem;
+      color: var(--text);
+    }
     .ml-sub-cell { text-align: center; width: 3.5rem; }
     .ml-sub-check {
       display: inline-flex;
@@ -565,6 +569,27 @@
       var editSection = document.getElementById('edit-week');
       if (editSection) editSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
       {% endif %}
+
+      function syncTeamScoreWeek(prefix, weekNum) {
+        var labelInput = document.getElementById(prefix + '-week-label');
+        document.querySelectorAll('.ml-team-score-week[data-prefix="' + prefix + '"]').forEach(function(panel) {
+          var active = String(panel.getAttribute('data-week')) === String(weekNum);
+          panel.hidden = !active;
+          panel.querySelectorAll('input').forEach(function(input) {
+            input.disabled = !active;
+          });
+          if (active && labelInput) {
+            labelInput.value = panel.getAttribute('data-label') || ('Week ' + weekNum);
+          }
+        });
+      }
+
+      document.querySelectorAll('.ml-week-number-select').forEach(function(select) {
+        select.addEventListener('change', function() {
+          syncTeamScoreWeek(select.getAttribute('data-prefix'), select.value);
+        });
+        syncTeamScoreWeek(select.getAttribute('data-prefix'), select.value);
+      });
     });
   </script>
 {% endblock %}

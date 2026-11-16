@@ -15,6 +15,7 @@ from datetime import datetime, timezone, date, timedelta
 from zoneinfo import ZoneInfo
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_from_directory, send_file
+from werkzeug.datastructures import MultiDict
 from werkzeug.utils import secure_filename
 from scheduler import (
     generate_schedule,
@@ -2225,30 +2226,120 @@ def mens_league_week_results_display(weeks):
     return display
 
 
+def mens_league_schedule_week(week_number):
+    """Return one schedule week dict by number, or None."""
+    try:
+        week_number = int(week_number)
+    except (TypeError, ValueError):
+        return None
+    for week in build_mens_league_schedule():
+        if week["week"] == week_number:
+            return week
+    return None
+
+
+def _mens_league_int_field(form, key, default=0):
+    try:
+        return max(0, int(form.get(key, default) or default))
+    except ValueError:
+        return max(0, default)
+
+
 def _parse_mens_league_week_form(form, default_label=""):
-    """Parse week label + per-player points/wins/losses/sub from the score form."""
-    week_label = (form.get("week_label") or "").strip() or default_label
+    """Parse team-based week scores (once per partnership) into per-player results."""
+    week_number = form.get("week_number", "").strip()
+    schedule_week = mens_league_schedule_week(week_number)
+    week_label = (form.get("week_label") or "").strip()
+    if schedule_week:
+        week_label = week_label or schedule_week["label"]
+    else:
+        week_label = week_label or default_label
+
     players = _mens_league_player_defaults()
+    if schedule_week:
+        for court in schedule_week["courts"]:
+            court_num = court["court"]
+            for side, ids_key in ((1, "team1_ids"), (2, "team2_ids")):
+                prefix = f"c{court_num}_t{side}"
+                points = _mens_league_int_field(form, f"{prefix}_points")
+                wins = _mens_league_int_field(form, f"{prefix}_wins")
+                losses = _mens_league_int_field(form, f"{prefix}_losses")
+                for player_id in court[ids_key]:
+                    name = _mens_league_player_name(player_id)
+                    players[name] = {
+                        "points_scored": points,
+                        "wins": wins,
+                        "losses": losses,
+                        "sub": form.get(f"sub_{player_id}") == "1",
+                    }
+        return week_label, players
+
+    # Fallback: legacy per-player fields
     for num, name in mens_league_players_ordered():
-        try:
-            points = int(form.get(f"points_{num}", 0) or 0)
-        except ValueError:
-            points = 0
-        try:
-            wins = int(form.get(f"wins_{num}", 0) or 0)
-        except ValueError:
-            wins = 0
-        try:
-            losses = int(form.get(f"losses_{num}", 0) or 0)
-        except ValueError:
-            losses = 0
         players[name] = {
-            "points_scored": max(0, points),
-            "wins": max(0, wins),
-            "losses": max(0, losses),
+            "points_scored": _mens_league_int_field(form, f"points_{num}"),
+            "wins": _mens_league_int_field(form, f"wins_{num}"),
+            "losses": _mens_league_int_field(form, f"losses_{num}"),
             "sub": form.get(f"sub_{num}") == "1",
         }
     return week_label, players
+
+
+def mens_league_team_score_form_weeks(saved_week=None):
+    """
+    Build schedule weeks with team score form values.
+    If saved_week is provided (display dict with edit_players), prefill from it.
+    """
+    by_number = {}
+    if saved_week:
+        for row in saved_week.get("edit_players") or []:
+            by_number[row["number"]] = row
+
+    form_weeks = []
+    for week in build_mens_league_schedule():
+        courts = []
+        for court in week["courts"]:
+            team_forms = []
+            for side, ids_key, label_key, numbers_key in (
+                (1, "team1_ids", "team1", "team1_numbers"),
+                (2, "team2_ids", "team2", "team2_numbers"),
+            ):
+                ids = court[ids_key]
+                first = by_number.get(ids[0], {})
+                second = by_number.get(ids[1], {})
+                # Partners share points/wins/losses; prefer first, fall back to second
+                points = first.get("points_scored", second.get("points_scored", 0))
+                wins = first.get("wins", second.get("wins", 0))
+                losses = first.get("losses", second.get("losses", 0))
+                team_forms.append({
+                    "side": side,
+                    "prefix": f"c{court['court']}_t{side}",
+                    "label": court[label_key],
+                    "numbers": court[numbers_key],
+                    "player_ids": ids,
+                    "players": [
+                        {
+                            "number": pid,
+                            "name": _mens_league_player_name(pid),
+                            "sub": bool((by_number.get(pid) or {}).get("sub")),
+                        }
+                        for pid in ids
+                    ],
+                    "points_scored": points,
+                    "wins": wins,
+                    "losses": losses,
+                })
+            courts.append({
+                "court": court["court"],
+                "teams": team_forms,
+            })
+        form_weeks.append({
+            "week": week["week"],
+            "label": week["label"],
+            "note": week.get("note", ""),
+            "courts": courts,
+        })
+    return form_weeks
 
 
 def _mens_league_require_auth(redirect_hash="#enter-week", **redirect_kwargs):
@@ -2269,13 +2360,27 @@ def pickle_u_leagues():
     mens_weeks = mens_league_week_results_display(weeks) if tab == "mens" else []
     edit_week = None
     edit_week_index = None
+    mens_score_form_weeks = []
+    mens_edit_score_form_weeks = []
+    mens_next_week_number = 1
     if tab == "mens":
+        scored_numbers = {
+            w["week_number"] for w in mens_weeks if w.get("week_number")
+        }
+        mens_score_form_weeks = mens_league_team_score_form_weeks()
+        for week in mens_score_form_weeks:
+            if week["week"] not in scored_numbers:
+                mens_next_week_number = week["week"]
+                break
+        else:
+            mens_next_week_number = 7
         raw_edit = (request.args.get("edit_week") or "").strip()
         if raw_edit.isdigit():
             idx = int(raw_edit)
             if 0 <= idx < len(mens_weeks):
                 edit_week_index = idx
                 edit_week = mens_weeks[idx]
+                mens_edit_score_form_weeks = mens_league_team_score_form_weeks(edit_week)
     return render_template(
         "pickle_u_leagues.html",
         tab=tab,
@@ -2285,7 +2390,10 @@ def pickle_u_leagues():
         mens_schedule=build_mens_league_schedule() if tab == "mens" else [],
         mens_standings=build_mens_league_standings() if tab == "mens" else [],
         mens_weeks=mens_weeks,
-        mens_next_week_label=f"Week {len(weeks) + 1}" if tab == "mens" else "",
+        mens_next_week_label=f"Week {mens_next_week_number}" if tab == "mens" else "",
+        mens_next_week_number=mens_next_week_number if tab == "mens" else 1,
+        mens_score_form_weeks=mens_score_form_weeks,
+        mens_edit_score_form_weeks=mens_edit_score_form_weeks,
         mens_edit_week=edit_week,
         mens_edit_week_index=edit_week_index,
         schedule_authenticated=bool(session.get("schedule_authenticated")),
@@ -2317,6 +2425,14 @@ def mens_league_add_week():
     week_label, players = _parse_mens_league_week_form(
         request.form, default_label=f"Week {len(weeks) + 1}"
     )
+    if not mens_league_schedule_week(request.form.get("week_number", "")):
+        flash("Choose a schedule week so scores can be applied to both teammates.", "error")
+        return redirect(url_for("pickle_u_leagues", tab="mens") + "#enter-week")
+    # Prevent duplicate week labels
+    for existing in weeks:
+        if (existing.get("label") or "").strip().lower() == week_label.lower():
+            flash(f"{week_label} already has scores. Use Edit week to change them.", "error")
+            return redirect(url_for("pickle_u_leagues", tab="mens") + "#weekly-results")
     weeks.append({"label": week_label, "players": players})
     save_mens_league_weeks(weeks)
     flash(f"Saved {week_label} results. Standings updated.", "success")
@@ -2345,8 +2461,20 @@ def mens_league_edit_week():
         return redirect(url_for("pickle_u_leagues", tab="mens") + "#weekly-results")
 
     existing_label = weeks[week_index].get("label") or f"Week {week_index + 1}"
+    week_number = (request.form.get("week_number") or "").strip()
+    if not week_number:
+        inferred = _mens_league_week_number_from_label(existing_label)
+        week_number = str(inferred) if inferred else ""
+    if not mens_league_schedule_week(week_number):
+        flash("Could not match this week to the season schedule.", "error")
+        return redirect(
+            url_for("pickle_u_leagues", tab="mens", edit_week=week_index) + "#edit-week"
+        )
+    # Ensure parse uses the resolved week number
+    form_values = request.form.to_dict()
+    form_values["week_number"] = week_number
     week_label, players = _parse_mens_league_week_form(
-        request.form, default_label=existing_label
+        MultiDict(form_values), default_label=existing_label
     )
     weeks[week_index] = {"label": week_label, "players": players}
     save_mens_league_weeks(weeks)

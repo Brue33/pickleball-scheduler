@@ -1,0 +1,68 @@
+{# Expects: form_weeks (list), active_week (int), prefix (add|edit), include_week_select (bool) #}
+{% set active_week = active_week|default(1) %}
+{% set prefix = prefix|default('add') %}
+{% if include_week_select %}
+  <label for="{{ prefix }}-week-number">Schedule week</label>
+  <select id="{{ prefix }}-week-number" name="week_number" class="ml-week-number-select" data-prefix="{{ prefix }}" required style="max-width: 12rem;">
+    {% for week in form_weeks %}
+      <option value="{{ week.week }}" {% if week.week == active_week %}selected{% endif %}>{{ week.label }}</option>
+    {% endfor %}
+  </select>
+  <input type="hidden" id="{{ prefix }}-week-label" name="week_label" value="Week {{ active_week }}">
+{% else %}
+  <input type="hidden" name="week_number" value="{{ active_week }}">
+  <input type="hidden" name="week_label" value="Week {{ active_week }}">
+{% endif %}
+
+{% for week in form_weeks %}
+  <div class="ml-team-score-week"
+       data-prefix="{{ prefix }}"
+       data-week="{{ week.week }}"
+       data-label="{{ week.label|e }}"
+       {% if week.week != active_week %}hidden{% endif %}>
+    {% if week.note %}
+      <p class="ml-week-note">{{ week.note }}</p>
+    {% endif %}
+    {% for court in week.courts %}
+      <div class="ml-team-score-court">
+        <h4 class="ml-team-score-court-title">Court {{ court.court }}</h4>
+        <div class="ml-team-score-grid">
+          {% for team in court.teams %}
+            <div class="ml-team-score-card">
+              <p class="ml-team-score-names">{{ team.label }}</p>
+              <p class="ml-numbers">#{{ team.numbers }}</p>
+              <div class="ml-team-score-fields">
+                <label>
+                  Points
+                  <input type="number" name="{{ team.prefix }}_points" min="0" value="{{ team.points_scored }}"
+                         {% if week.week != active_week %}disabled{% endif %} style="max-width: 5rem;">
+                </label>
+                <label>
+                  Wins
+                  <input type="number" name="{{ team.prefix }}_wins" min="0" value="{{ team.wins }}"
+                         {% if week.week != active_week %}disabled{% endif %} style="max-width: 4rem;">
+                </label>
+                <label>
+                  Losses
+                  <input type="number" name="{{ team.prefix }}_losses" min="0" value="{{ team.losses }}"
+                         {% if week.week != active_week %}disabled{% endif %} style="max-width: 4rem;">
+                </label>
+              </div>
+              <div class="ml-team-sub-row">
+                <span class="ml-team-sub-label">Sub played for:</span>
+                {% for player in team.players %}
+                  <label class="ml-sub-check ml-sub-check-named">
+                    <input type="checkbox" name="sub_{{ player.number }}" value="1"
+                           {% if player.sub %}checked{% endif %}
+                           {% if week.week != active_week %}disabled{% endif %}>
+                    {{ player.name }}
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% endfor %}
