@@ -101,10 +101,10 @@ PROFILE_YES_NO_OPTIONS = ["Yes", "No"]
 PICKLE_U_LEAGUE_TABS = {
     "mens": {
         "label": "Men's League",
-        "title": "Men's League at Pickle U",
+        "title": "Men's Int. Holiday League",
         "icon": "M",
-        "desc": "Men's doubles league — standings and weekly results.",
-        "meta": "More info to come",
+        "desc": "12-player doubles league — schedule, weekly scores, and standings.",
+        "meta": "12 players · 7 weeks",
     },
     "coed": {
         "label": "Coed League",
@@ -1964,49 +1964,129 @@ def generate_schedule_fixed_pairs(pairs, num_courts, num_rounds):
     return scheduled
 
 
+# Men's Int. Holiday League — 12 players, 7 weeks, 3 courts
+# Schedule note: printed Weeks 2 and 4 were swapped for the live season.
 MENS_LEAGUE_ROSTER = {
-    1: "Matt O",
-    2: "Casey T",
-    3: "TJ F",
-    4: "Rob W",
-    5: "Bryan R",
-    6: "Ryan D",
-    7: "Austin M",
-    8: "Joe T",
+    1: "James M",
+    2: "Caleb K",
+    3: "Bryan R",
+    4: "Dominick C",
+    5: "Joe T",
+    6: "Tracey D",
+    7: "Ryan D",
+    8: "Dietrich H",
+    9: "Brett R",
+    10: "Chris K",
+    11: "Nicole R",
+    12: "Casey T",
 }
 
-# Each entry: (game #, court 7 matchup, court 8 matchup) as ((t1a, t1b), (t2a, t2b))
-MENS_LEAGUE_GAMES = [
-    (1, ((1, 2), (3, 8)), ((4, 7), (5, 6))),
-    (2, ((3, 4), (1, 7)), ((8, 6), (2, 5))),
-    (3, ((6, 2), (7, 8)), ((4, 1), (5, 3))),
-    (4, ((7, 5), (8, 4)), ((2, 3), (6, 1))),
-    (5, ((1, 3), (4, 2)), ((5, 8), (6, 7))),
-    (6, ((4, 5), (8, 1)), ((2, 7), (3, 6))),
-    (7, ((7, 3), (8, 2)), ((1, 5), (6, 4))),
+# Each week: list of courts; each court is ((t1a, t1b), (t2a, t2b)) by player number
+MENS_LEAGUE_WEEKS = [
+    {
+        "week": 1,
+        "label": "Week 1",
+        "courts": [
+            ((1, 7), (2, 8)),
+            ((3, 9), (4, 10)),
+            ((5, 11), (6, 12)),
+        ],
+    },
+    {
+        "week": 2,
+        "label": "Week 2",
+        "note": "Swapped with original printed Week 4",
+        "courts": [
+            ((8, 12), (7, 6)),
+            ((1, 10), (9, 11)),
+            ((2, 5), (3, 4)),
+        ],
+    },
+    {
+        "week": 3,
+        "label": "Week 3",
+        "courts": [
+            ((3, 6), (4, 5)),
+            ((7, 11), (2, 12)),
+            ((1, 9), (8, 10)),
+        ],
+    },
+    {
+        "week": 4,
+        "label": "Week 4",
+        "note": "Swapped with original printed Week 2",
+        "courts": [
+            ((4, 12), (5, 6)),
+            ((1, 8), (7, 9)),
+            ((2, 10), (3, 11)),
+        ],
+    },
+    {
+        "week": 5,
+        "label": "Week 5",
+        "courts": [
+            ((9, 6), (8, 5)),
+            ((7, 4), (2, 3)),
+            ((1, 11), (10, 12)),
+        ],
+    },
+    {
+        "week": 6,
+        "label": "Week 6",
+        "courts": [
+            ((1, 12), (11, 6)),
+            ((10, 5), (9, 4)),
+            ((8, 3), (7, 2)),
+        ],
+    },
+    {
+        "week": 7,
+        "label": "Week 7",
+        "courts": [
+            ((1, 2), (3, 5)),
+            ((8, 7), (6, 4)),
+            ((9, 10), (11, 12)),
+        ],
+    },
 ]
 
 
-def _mens_league_team(player_ids):
-    roster = MENS_LEAGUE_ROSTER
-    return f"{roster[player_ids[0]]} & {roster[player_ids[1]]}"
+def _mens_league_player_name(player_id):
+    return MENS_LEAGUE_ROSTER.get(player_id, f"#{player_id}")
 
 
-def _mens_league_matchup(team1_ids, team2_ids):
-    return _mens_league_team(team1_ids), _mens_league_team(team2_ids)
+def _mens_league_pair_label(pair_ids):
+    a, b = pair_ids
+    return f"{_mens_league_player_name(a)} & {_mens_league_player_name(b)}"
+
+
+def _mens_league_pair_numbers(pair_ids):
+    a, b = pair_ids
+    return f"{a}–{b}"
 
 
 def build_mens_league_schedule():
-    games = []
-    for game_num, court_7, court_8 in MENS_LEAGUE_GAMES:
-        t1_7, t2_7 = _mens_league_matchup(*court_7)
-        t1_8, t2_8 = _mens_league_matchup(*court_8)
-        games.append({
-            "game": game_num,
-            "court_7": {"team1": t1_7, "team2": t2_7},
-            "court_8": {"team1": t1_8, "team2": t2_8},
+    """Full season schedule with player names on every court."""
+    weeks = []
+    for week in MENS_LEAGUE_WEEKS:
+        courts = []
+        for idx, (team1_ids, team2_ids) in enumerate(week["courts"], start=1):
+            courts.append({
+                "court": idx,
+                "team1": _mens_league_pair_label(team1_ids),
+                "team2": _mens_league_pair_label(team2_ids),
+                "team1_numbers": _mens_league_pair_numbers(team1_ids),
+                "team2_numbers": _mens_league_pair_numbers(team2_ids),
+                "team1_ids": list(team1_ids),
+                "team2_ids": list(team2_ids),
+            })
+        weeks.append({
+            "week": week["week"],
+            "label": week["label"],
+            "note": week.get("note", ""),
+            "courts": courts,
         })
-    return games
+    return weeks
 
 
 def _mens_league_player_defaults():
@@ -2014,7 +2094,7 @@ def _mens_league_player_defaults():
 
 
 def load_mens_league_weeks():
-    """Load weekly result entries. Migrates legacy flat totals file if needed."""
+    """Load weekly result entries for the current Holiday League roster."""
     if not MENS_LEAGUE_STANDINGS_FILE.exists():
         return []
     try:
@@ -2022,24 +2102,31 @@ def load_mens_league_weeks():
             data = json.load(f)
     except (json.JSONDecodeError, OSError):
         return []
-    if isinstance(data, dict) and "weeks" in data:
-        return data.get("weeks") or []
-    if isinstance(data, dict):
-        roster_names = set(MENS_LEAGUE_ROSTER.values())
-        if roster_names.intersection(data.keys()):
-            players = _mens_league_player_defaults()
-            for name in players:
-                if name in data and isinstance(data[name], dict):
-                    entry = data[name]
-                    players[name] = {
-                        "points_scored": int(entry.get("points_scored", 0) or 0),
-                        "wins": int(entry.get("wins", 0) or 0),
-                        "losses": int(entry.get("losses", 0) or 0),
-                    }
-            weeks = [{"label": "Imported", "players": players}]
-            save_mens_league_weeks(weeks)
-            return weeks
-    return []
+    if not isinstance(data, dict) or "weeks" not in data:
+        return []
+    roster_names = set(MENS_LEAGUE_ROSTER.values())
+    weeks = []
+    for week in data.get("weeks") or []:
+        if not isinstance(week, dict):
+            continue
+        players_raw = week.get("players") or {}
+        # Skip legacy weeks that don't match the current 12-player roster
+        if players_raw and not roster_names.intersection(players_raw.keys()):
+            continue
+        players = _mens_league_player_defaults()
+        for name in players:
+            entry = players_raw.get(name) if isinstance(players_raw, dict) else None
+            if isinstance(entry, dict):
+                players[name] = {
+                    "points_scored": max(0, int(entry.get("points_scored", 0) or 0)),
+                    "wins": max(0, int(entry.get("wins", 0) or 0)),
+                    "losses": max(0, int(entry.get("losses", 0) or 0)),
+                }
+        weeks.append({
+            "label": (week.get("label") or "").strip() or f"Week {len(weeks) + 1}",
+            "players": players,
+        })
+    return weeks
 
 
 def save_mens_league_weeks(weeks):
@@ -2063,12 +2150,13 @@ def aggregate_mens_league_totals():
 
 
 def build_mens_league_standings():
-    """Season standings 1–8: most points, then wins; losses/name break remaining ties."""
+    """Season standings: most points, then wins; losses/name break remaining ties."""
     raw = aggregate_mens_league_totals()
     rows = []
-    for name in [MENS_LEAGUE_ROSTER[n] for n in sorted(MENS_LEAGUE_ROSTER)]:
+    for num, name in mens_league_players_ordered():
         s = raw[name]
         rows.append({
+            "number": num,
             "name": name,
             "points_scored": s["points_scored"],
             "wins": s["wins"],
@@ -2086,17 +2174,46 @@ def mens_league_players_ordered():
     return [(n, MENS_LEAGUE_ROSTER[n]) for n in sorted(MENS_LEAGUE_ROSTER)]
 
 
+def mens_league_week_results_display(weeks):
+    """Attach ordered player rows to each saved week for the template."""
+    display = []
+    for week in weeks:
+        players = week.get("players") or {}
+        rows = []
+        for num, name in mens_league_players_ordered():
+            entry = players.get(name) or {}
+            rows.append({
+                "number": num,
+                "name": name,
+                "points_scored": int(entry.get("points_scored", 0) or 0),
+                "wins": int(entry.get("wins", 0) or 0),
+                "losses": int(entry.get("losses", 0) or 0),
+            })
+        display.append({
+            "label": week.get("label") or "Week",
+            "players": rows,
+        })
+    return display
+
+
 @app.route("/pickle-u-leagues")
 @app.route("/mens-league")
 def pickle_u_leagues():
     tab = (request.args.get("tab") or "").strip().lower()
     if tab not in PICKLE_U_LEAGUE_TABS:
         tab = ""
+    weeks = load_mens_league_weeks() if tab == "mens" else []
     return render_template(
         "pickle_u_leagues.html",
         tab=tab,
         league_tabs=PICKLE_U_LEAGUE_TABS,
         active_league=PICKLE_U_LEAGUE_TABS.get(tab),
+        mens_roster=mens_league_players_ordered() if tab == "mens" else [],
+        mens_schedule=build_mens_league_schedule() if tab == "mens" else [],
+        mens_standings=build_mens_league_standings() if tab == "mens" else [],
+        mens_weeks=mens_league_week_results_display(weeks) if tab == "mens" else [],
+        mens_next_week_label=f"Week {len(weeks) + 1}" if tab == "mens" else "",
+        schedule_authenticated=bool(session.get("schedule_authenticated")),
     )
 
 

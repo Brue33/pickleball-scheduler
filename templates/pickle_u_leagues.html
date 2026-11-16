@@ -1,7 +1,170 @@
 {% extends "base.html" %}
 {% block title %}{% if active_league %}{{ active_league.title }}{% else %}Pickle U Leagues{% endif %} — Mitten Smash{% endblock %}
 {% block content %}
-  {% if active_league %}
+  {% if active_league and tab == 'mens' %}
+    <p><a href="{{ url_for('pickle_u_leagues') }}">← Pickle U Leagues</a></p>
+    <header class="fg-header">
+      <h1>{{ active_league.title }}</h1>
+      <p class="fg-tagline">12-player doubles at Pickle U — roster, weekly schedule with names, scores, and standings.</p>
+    </header>
+
+    <nav class="ml-tabs" aria-label="Men's League sections">
+      <a href="#roster">Roster</a>
+      <a href="#schedule">Schedule</a>
+      <a href="#standings">Leaderboard</a>
+      <a href="#enter-week">Enter scores</a>
+      <a href="#weekly-results">Weekly results</a>
+    </nav>
+
+    <section id="roster" class="ml-section">
+      <h2 class="ml-section-title">Players</h2>
+      <p class="ml-section-sub">Assigned numbers for the season.</p>
+      <table class="ml-table ml-roster-table">
+        <thead>
+          <tr><th>#</th><th>Name</th></tr>
+        </thead>
+        <tbody>
+          {% for num, name in mens_roster %}
+            <tr>
+              <td>{{ num }}</td>
+              <td>{{ name }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section id="schedule" class="ml-section">
+      <h2 class="ml-section-title">Season schedule</h2>
+      <p class="ml-section-sub">Weeks 2 and 4 from the printed sheet are swapped. Each court shows player names.</p>
+      {% for week in mens_schedule %}
+        <article class="ml-week-card">
+          <h3 class="ml-week-title">{{ week.label }}</h3>
+          {% if week.note %}
+            <p class="ml-week-note">{{ week.note }}</p>
+          {% endif %}
+          <div class="ml-court-grid">
+            {% for court in week.courts %}
+              <div class="ml-court">
+                <p class="ml-court-label">Court {{ court.court }}</p>
+                <p class="ml-matchup">
+                  <span class="ml-team">{{ court.team1 }}</span>
+                  <span class="ml-vs">vs</span>
+                  <span class="ml-team">{{ court.team2 }}</span>
+                </p>
+                <p class="ml-numbers">#{{ court.team1_numbers }} vs #{{ court.team2_numbers }}</p>
+              </div>
+            {% endfor %}
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+
+    <section id="standings" class="ml-section">
+      <h2 class="ml-section-title">Leaderboard</h2>
+      <p class="ml-section-sub">Ranked by total points, then wins.</p>
+      <table class="ml-table">
+        <thead>
+          <tr>
+            <th>Place</th>
+            <th>#</th>
+            <th>Player</th>
+            <th>Pts</th>
+            <th>Wins</th>
+            <th>Losses</th>
+            <th>Behind</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in mens_standings %}
+            <tr>
+              <td>{{ row.position }}</td>
+              <td>{{ row.number }}</td>
+              <td>{{ row.name }}</td>
+              <td><strong>{{ row.points_scored }}</strong></td>
+              <td>{{ row.wins }}</td>
+              <td>{{ row.losses }}</td>
+              <td>{% if row.points_behind %}−{{ row.points_behind }}{% else %}—{% endif %}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7" class="ml-empty">No scores yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section id="enter-week" class="ml-section">
+      <h2 class="ml-section-title">Enter weekly scores</h2>
+      <p class="ml-section-sub">Enter each player’s total points, wins, and losses for the week (same as the paper sheets).</p>
+      {% if not schedule_authenticated %}
+        <form method="post" action="{{ url_for('mens_league_standings_unlock') }}" class="ml-unlock-form">
+          <label for="ml-password">Schedule password</label>
+          <div class="ml-unlock-row">
+            <input type="password" id="ml-password" name="password" required style="max-width: 14rem;">
+            <button type="submit" class="btn">Unlock score entry</button>
+          </div>
+        </form>
+      {% else %}
+        <form method="post" action="{{ url_for('mens_league_add_week') }}" class="ml-score-form">
+          <label for="week_label">Week label</label>
+          <input type="text" id="week_label" name="week_label" value="{{ mens_next_week_label|e }}" required style="max-width: 12rem;">
+          <table class="ml-table ml-score-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Player</th>
+                <th>Points</th>
+                <th>Wins</th>
+                <th>Losses</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for num, name in mens_roster %}
+                <tr>
+                  <td>{{ num }}</td>
+                  <td>{{ name }}</td>
+                  <td><input type="number" name="points_{{ num }}" min="0" value="0" style="max-width: 5rem;"></td>
+                  <td><input type="number" name="wins_{{ num }}" min="0" value="0" style="max-width: 4rem;"></td>
+                  <td><input type="number" name="losses_{{ num }}" min="0" value="0" style="max-width: 4rem;"></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <button type="submit">Save week results</button>
+        </form>
+      {% endif %}
+    </section>
+
+    <section id="weekly-results" class="ml-section">
+      <h2 class="ml-section-title">Weekly results</h2>
+      {% if mens_weeks %}
+        {% for week in mens_weeks %}
+          <article class="ml-week-card">
+            <h3 class="ml-week-title">{{ week.label }}</h3>
+            <table class="ml-table">
+              <thead>
+                <tr><th>#</th><th>Player</th><th>Pts</th><th>W</th><th>L</th></tr>
+              </thead>
+              <tbody>
+                {% for row in week.players %}
+                  <tr>
+                    <td>{{ row.number }}</td>
+                    <td>{{ row.name }}</td>
+                    <td>{{ row.points_scored }}</td>
+                    <td>{{ row.wins }}</td>
+                    <td>{{ row.losses }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </article>
+        {% endfor %}
+      {% else %}
+        <p class="ml-empty">No weekly results saved yet.</p>
+      {% endif %}
+    </section>
+
+  {% elif active_league %}
     <p><a href="{{ url_for('pickle_u_leagues') }}">← Pickle U Leagues</a></p>
     <header class="fg-header">
       <h1>{{ active_league.title }}</h1>
@@ -74,8 +237,81 @@
     .fg-card-meta { margin: 0; font-size: 0.85rem; color: var(--text); }
     .fg-meta-muted { color: var(--muted); }
     .pul-placeholder { color: var(--muted); margin: 0; max-width: 52rem; }
+
+    .ml-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.15rem;
+      margin: 0 0 1.5rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 2px solid var(--court-line);
+      max-width: 56rem;
+    }
+    .ml-tabs a { color: var(--muted); font-weight: 600; font-size: 0.92rem; }
+    .ml-tabs a:hover { color: var(--accent); }
+    .ml-section { margin-bottom: 2.25rem; max-width: 56rem; }
+    .ml-section-title { margin: 0 0 0.35rem; font-size: 1.25rem; color: var(--accent); }
+    .ml-section-sub { margin: 0 0 1rem; color: var(--muted); font-size: 0.95rem; }
+    .ml-table {
+      width: 100%;
+      max-width: 40rem;
+      border-collapse: collapse;
+      border: 2px solid var(--court-line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+    .ml-table th, .ml-table td {
+      padding: 0.45rem 0.65rem;
+      text-align: left;
+      border-bottom: 1px solid var(--court-line);
+      font-size: 0.92rem;
+    }
+    .ml-table th {
+      background: var(--court);
+      color: var(--court-line);
+      font-weight: 600;
+    }
+    .ml-roster-table { max-width: 18rem; }
+    .ml-week-card {
+      background: var(--surface);
+      border: 2px solid var(--court-line);
+      border-radius: 10px;
+      padding: 1rem 1.1rem;
+      margin-bottom: 0.85rem;
+    }
+    .ml-week-title { margin: 0 0 0.35rem; font-size: 1.05rem; color: var(--text); }
+    .ml-week-note { margin: 0 0 0.75rem; font-size: 0.85rem; color: var(--muted); font-style: italic; }
+    .ml-court-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+      gap: 0.75rem;
+    }
+    .ml-court {
+      background: var(--court);
+      border: 1px solid var(--court-line);
+      border-radius: 8px;
+      padding: 0.7rem 0.8rem;
+    }
+    .ml-court-label {
+      margin: 0 0 0.35rem;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+    .ml-matchup { margin: 0; line-height: 1.4; font-size: 0.92rem; }
+    .ml-team { color: var(--text); font-weight: 600; }
+    .ml-vs { display: inline-block; margin: 0 0.35rem; color: var(--muted); font-weight: 500; }
+    .ml-numbers { margin: 0.35rem 0 0; font-size: 0.8rem; color: var(--muted); }
+    .ml-unlock-form, .ml-score-form { margin-top: 0.5rem; }
+    .ml-unlock-row { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: flex-end; }
+    .ml-unlock-row .btn { margin-top: 0; }
+    .ml-score-table input { margin-top: 0; }
+    .ml-empty { color: var(--muted); font-style: italic; }
     @media (max-width: 480px) {
       .fg-grid { grid-template-columns: 1fr; }
+      .ml-court-grid { grid-template-columns: 1fr; }
     }
   </style>
 {% endblock %}
