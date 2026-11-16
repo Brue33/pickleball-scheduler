@@ -2190,19 +2190,22 @@ def _mens_league_week_number_from_label(label):
 def mens_league_week_results_display(weeks):
     """Attach ordered player rows to each saved week for the template."""
     display = []
-    for week in weeks:
+    for index, week in enumerate(weeks):
         players = week.get("players") or {}
         rows = []
+        edit_rows = []
         for num, name in mens_league_players_ordered():
             entry = players.get(name) or {}
-            rows.append({
+            row = {
                 "number": num,
                 "name": name,
                 "points_scored": int(entry.get("points_scored", 0) or 0),
                 "wins": int(entry.get("wins", 0) or 0),
                 "losses": int(entry.get("losses", 0) or 0),
                 "sub": bool(entry.get("sub")),
-            })
+            }
+            edit_rows.append(dict(row))
+            rows.append(row)
         # Sort week standings by points then wins (same as season board)
         ranked = sorted(
             rows,
@@ -2212,12 +2215,48 @@ def mens_league_week_results_display(weeks):
             row["position"] = i + 1
         label = week.get("label") or "Week"
         display.append({
+            "index": index,
             "label": label,
             "week_number": _mens_league_week_number_from_label(label),
             "players": ranked,
+            "edit_players": edit_rows,
             "has_subs": any(r["sub"] for r in ranked),
         })
     return display
+
+
+def _parse_mens_league_week_form(form, default_label=""):
+    """Parse week label + per-player points/wins/losses/sub from the score form."""
+    week_label = (form.get("week_label") or "").strip() or default_label
+    players = _mens_league_player_defaults()
+    for num, name in mens_league_players_ordered():
+        try:
+            points = int(form.get(f"points_{num}", 0) or 0)
+        except ValueError:
+            points = 0
+        try:
+            wins = int(form.get(f"wins_{num}", 0) or 0)
+        except ValueError:
+            wins = 0
+        try:
+            losses = int(form.get(f"losses_{num}", 0) or 0)
+        except ValueError:
+            losses = 0
+        players[name] = {
+            "points_scored": max(0, points),
+            "wins": max(0, wins),
+            "losses": max(0, losses),
+            "sub": form.get(f"sub_{num}") == "1",
+        }
+    return week_label, players
+
+
+def _mens_league_require_auth(redirect_hash="#enter-week", **redirect_kwargs):
+    if session.get("schedule_authenticated") or request.form.get("password") == SCHEDULE_PASSWORD:
+        session["schedule_authenticated"] = True
+        return None
+    flash("Incorrect password. Enter the schedule password to save weekly results.", "error")
+    return redirect(url_for("pickle_u_leagues", tab="mens", **redirect_kwargs) + redirect_hash)
 
 
 @app.route("/pickle-u-leagues")
@@ -2227,6 +2266,16 @@ def pickle_u_leagues():
     if tab not in PICKLE_U_LEAGUE_TABS:
         tab = ""
     weeks = load_mens_league_weeks() if tab == "mens" else []
+    mens_weeks = mens_league_week_results_display(weeks) if tab == "mens" else []
+    edit_week = None
+    edit_week_index = None
+    if tab == "mens":
+        raw_edit = (request.args.get("edit_week") or "").strip()
+        if raw_edit.isdigit():
+            idx = int(raw_edit)
+            if 0 <= idx < len(mens_weeks):
+                edit_week_index = idx
+                edit_week = mens_weeks[idx]
     return render_template(
         "pickle_u_leagues.html",
         tab=tab,
@@ -2235,8 +2284,10 @@ def pickle_u_leagues():
         mens_roster=mens_league_players_ordered() if tab == "mens" else [],
         mens_schedule=build_mens_league_schedule() if tab == "mens" else [],
         mens_standings=build_mens_league_standings() if tab == "mens" else [],
-        mens_weeks=mens_league_week_results_display(weeks) if tab == "mens" else [],
+        mens_weeks=mens_weeks,
         mens_next_week_label=f"Week {len(weeks) + 1}" if tab == "mens" else "",
+        mens_edit_week=edit_week,
+        mens_edit_week_index=edit_week_index,
         schedule_authenticated=bool(session.get("schedule_authenticated")),
     )
 
@@ -2244,47 +2295,65 @@ def pickle_u_leagues():
 @app.route("/mens-league/standings/unlock", methods=["POST"])
 def mens_league_standings_unlock():
     """Unlock weekly standings entry (schedule password)."""
+    edit_week = (request.form.get("edit_week") or "").strip()
+    redirect_kwargs = {}
+    redirect_hash = "#enter-week"
+    if edit_week.isdigit():
+        redirect_kwargs["edit_week"] = edit_week
+        redirect_hash = "#edit-week"
     if request.form.get("password") == SCHEDULE_PASSWORD:
         session["schedule_authenticated"] = True
-        return redirect(url_for("pickle_u_leagues", tab="mens") + "#enter-week")
+        return redirect(url_for("pickle_u_leagues", tab="mens", **redirect_kwargs) + redirect_hash)
     flash("Incorrect password.", "error")
-    return redirect(url_for("pickle_u_leagues", tab="mens") + "#enter-week")
+    return redirect(url_for("pickle_u_leagues", tab="mens", **redirect_kwargs) + redirect_hash)
 
 
 @app.route("/mens-league/standings/week", methods=["POST"])
 def mens_league_add_week():
-    if not session.get("schedule_authenticated") and request.form.get("password") != SCHEDULE_PASSWORD:
-        flash("Incorrect password. Enter the schedule password to save weekly results.", "error")
-        return redirect(url_for("pickle_u_leagues", tab="mens") + "#enter-week")
-    session["schedule_authenticated"] = True
-    week_label = (request.form.get("week_label") or "").strip()
+    auth_redirect = _mens_league_require_auth("#enter-week")
+    if auth_redirect:
+        return auth_redirect
     weeks = load_mens_league_weeks()
-    if not week_label:
-        week_label = f"Week {len(weeks) + 1}"
-    players = _mens_league_player_defaults()
-    for num, name in mens_league_players_ordered():
-        try:
-            points = int(request.form.get(f"points_{num}", 0) or 0)
-        except ValueError:
-            points = 0
-        try:
-            wins = int(request.form.get(f"wins_{num}", 0) or 0)
-        except ValueError:
-            wins = 0
-        try:
-            losses = int(request.form.get(f"losses_{num}", 0) or 0)
-        except ValueError:
-            losses = 0
-        players[name] = {
-            "points_scored": max(0, points),
-            "wins": max(0, wins),
-            "losses": max(0, losses),
-            "sub": request.form.get(f"sub_{num}") == "1",
-        }
+    week_label, players = _parse_mens_league_week_form(
+        request.form, default_label=f"Week {len(weeks) + 1}"
+    )
     weeks.append({"label": week_label, "players": players})
     save_mens_league_weeks(weeks)
     flash(f"Saved {week_label} results. Standings updated.", "success")
     return redirect(url_for("pickle_u_leagues", tab="mens") + "#standings")
+
+
+@app.route("/mens-league/standings/week/edit", methods=["POST"])
+def mens_league_edit_week():
+    """Update an existing week's results."""
+    week_index_raw = (request.form.get("week_index") or "").strip()
+    try:
+        week_index = int(week_index_raw)
+    except ValueError:
+        flash("Could not find that week to edit.", "error")
+        return redirect(url_for("pickle_u_leagues", tab="mens") + "#weekly-results")
+
+    auth_redirect = _mens_league_require_auth(
+        "#edit-week", edit_week=week_index
+    )
+    if auth_redirect:
+        return auth_redirect
+
+    weeks = load_mens_league_weeks()
+    if week_index < 0 or week_index >= len(weeks):
+        flash("That week no longer exists.", "error")
+        return redirect(url_for("pickle_u_leagues", tab="mens") + "#weekly-results")
+
+    existing_label = weeks[week_index].get("label") or f"Week {week_index + 1}"
+    week_label, players = _parse_mens_league_week_form(
+        request.form, default_label=existing_label
+    )
+    weeks[week_index] = {"label": week_label, "players": players}
+    save_mens_league_weeks(weeks)
+    flash(f"Updated {week_label} results. Standings updated.", "success")
+    return redirect(
+        url_for("pickle_u_leagues", tab="mens") + f"#week-results-{week_index}"
+    )
 
 
 @app.route("/friends-group")

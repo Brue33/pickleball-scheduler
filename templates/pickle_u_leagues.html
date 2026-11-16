@@ -101,6 +101,62 @@
       </table>
     </section>
 
+    {% if mens_edit_week %}
+      <section id="edit-week" class="ml-section">
+        <h2 class="ml-section-title">Edit {{ mens_edit_week.label }}</h2>
+        <p class="ml-section-sub">Update points, wins, losses, and Sub markers for this past week.</p>
+        {% if not schedule_authenticated %}
+          <form method="post" action="{{ url_for('mens_league_standings_unlock') }}" class="ml-unlock-form">
+            <input type="hidden" name="edit_week" value="{{ mens_edit_week_index }}">
+            <label for="ml-edit-password">Schedule password</label>
+            <div class="ml-unlock-row">
+              <input type="password" id="ml-edit-password" name="password" required style="max-width: 14rem;">
+              <button type="submit" class="btn">Unlock to edit</button>
+            </div>
+          </form>
+        {% else %}
+          <form method="post" action="{{ url_for('mens_league_edit_week') }}" class="ml-score-form">
+            <input type="hidden" name="week_index" value="{{ mens_edit_week_index }}">
+            <label for="edit_week_label">Week label</label>
+            <input type="text" id="edit_week_label" name="week_label" value="{{ mens_edit_week.label|e }}" required style="max-width: 12rem;">
+            <table class="ml-table ml-score-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Player</th>
+                  <th>Points</th>
+                  <th>Wins</th>
+                  <th>Losses</th>
+                  <th>Sub</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in mens_edit_week.edit_players %}
+                  <tr>
+                    <td>{{ row.number }}</td>
+                    <td>{{ row.name }}</td>
+                    <td><input type="number" name="points_{{ row.number }}" min="0" value="{{ row.points_scored }}" style="max-width: 5rem;"></td>
+                    <td><input type="number" name="wins_{{ row.number }}" min="0" value="{{ row.wins }}" style="max-width: 4rem;"></td>
+                    <td><input type="number" name="losses_{{ row.number }}" min="0" value="{{ row.losses }}" style="max-width: 4rem;"></td>
+                    <td class="ml-sub-cell">
+                      <label class="ml-sub-check">
+                        <input type="checkbox" name="sub_{{ row.number }}" value="1" {% if row.sub %}checked{% endif %}>
+                        <span class="ml-sr-only">Sub for {{ row.name }}</span>
+                      </label>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            <div class="ml-edit-actions">
+              <button type="submit">Save changes</button>
+              <a href="{{ url_for('pickle_u_leagues', tab='mens') }}#week-results-{{ mens_edit_week_index }}" class="btn btn-secondary">Cancel</a>
+            </div>
+          </form>
+        {% endif %}
+      </section>
+    {% endif %}
+
     <section id="enter-week" class="ml-section">
       <h2 class="ml-section-title">Enter weekly scores</h2>
       <p class="ml-section-sub">Enter each player’s total points, wins, and losses for the week. Check <strong>Sub</strong> if a substitute played in that player’s spot.</p>
@@ -152,26 +208,29 @@
 
     <section id="weekly-results" class="ml-section">
       <h2 class="ml-section-title">Weekly results</h2>
-      <p class="ml-section-sub">Click a week to see only that week’s scores (sorted by points, then wins).</p>
+      <p class="ml-section-sub">Click a week to see only that week’s scores. Use <strong>Edit week</strong> to change past results.</p>
       {% if mens_weeks %}
         <div class="ml-week-picker" role="tablist" aria-label="Select week results">
           {% for week in mens_weeks %}
             <button type="button"
-                    class="ml-week-pick {% if loop.first %}ml-week-pick-active{% endif %}"
+                    class="ml-week-pick {% if (mens_edit_week_index is not none and week.index == mens_edit_week_index) or (mens_edit_week_index is none and loop.first) %}ml-week-pick-active{% endif %}"
                     role="tab"
-                    aria-selected="{{ 'true' if loop.first else 'false' }}"
-                    data-week-panel="week-results-{{ loop.index0 }}">
+                    aria-selected="{{ 'true' if (mens_edit_week_index is not none and week.index == mens_edit_week_index) or (mens_edit_week_index is none and loop.first) else 'false' }}"
+                    data-week-panel="week-results-{{ week.index }}">
               {{ week.label }}
             </button>
           {% endfor %}
         </div>
         {% for week in mens_weeks %}
-          <article id="week-results-{{ loop.index0 }}"
+          <article id="week-results-{{ week.index }}"
                    class="ml-week-card ml-week-results-panel"
                    data-week="{{ week.week_number or '' }}"
-                   {% if not loop.first %}hidden{% endif %}
+                   {% if not ((mens_edit_week_index is not none and week.index == mens_edit_week_index) or (mens_edit_week_index is none and loop.first)) %}hidden{% endif %}
                    role="tabpanel">
-            <h3 class="ml-week-title">{{ week.label }} results</h3>
+            <div class="ml-week-card-header">
+              <h3 class="ml-week-title">{{ week.label }} results</h3>
+              <a href="{{ url_for('pickle_u_leagues', tab='mens', edit_week=week.index) }}#edit-week" class="btn btn-secondary ml-edit-week-btn">Edit week</a>
+            </div>
             {% if week.has_subs %}
               <p class="ml-week-note">Players marked Sub had a substitute that week.</p>
             {% endif %}
@@ -385,6 +444,21 @@
     .ml-unlock-row { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: flex-end; }
     .ml-unlock-row .btn { margin-top: 0; }
     .ml-score-table input { margin-top: 0; }
+    .ml-edit-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      align-items: center;
+      margin-top: 0.25rem;
+    }
+    .ml-edit-actions .btn { margin-top: 1rem; }
+    .ml-edit-week-btn {
+      margin-top: 0;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.85rem;
+      text-decoration: none;
+    }
+    .ml-edit-week-btn:hover { text-decoration: none; opacity: 0.9; }
     .ml-sub-cell { text-align: center; width: 3.5rem; }
     .ml-sub-check {
       display: inline-flex;
@@ -486,6 +560,11 @@
           document.getElementById('weekly-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
       });
+
+      {% if mens_edit_week %}
+      var editSection = document.getElementById('edit-week');
+      if (editSection) editSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      {% endif %}
     });
   </script>
 {% endblock %}
