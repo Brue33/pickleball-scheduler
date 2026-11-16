@@ -36,25 +36,33 @@
 
     <section id="schedule" class="ml-section">
       <h2 class="ml-section-title">Season schedule</h2>
-      <p class="ml-section-sub">Weeks 2 and 4 from the printed sheet are swapped. Each court shows player names.</p>
+      <p class="ml-section-sub">Weeks 2 and 4 from the printed sheet are swapped. Click a week to open its results (if scored).</p>
       {% for week in mens_schedule %}
-        <article class="ml-week-card">
-          <h3 class="ml-week-title">{{ week.label }}</h3>
+        <article class="ml-week-card ml-week-card--clickable" id="schedule-week-{{ week.week }}" data-week="{{ week.week }}" tabindex="0" role="button" aria-expanded="false">
+          <div class="ml-week-card-header">
+            <h3 class="ml-week-title">{{ week.label }}</h3>
+            <span class="ml-week-chevron" aria-hidden="true">▼</span>
+          </div>
           {% if week.note %}
             <p class="ml-week-note">{{ week.note }}</p>
           {% endif %}
-          <div class="ml-court-grid">
-            {% for court in week.courts %}
-              <div class="ml-court">
-                <p class="ml-court-label">Court {{ court.court }}</p>
-                <p class="ml-matchup">
-                  <span class="ml-team">{{ court.team1 }}</span>
-                  <span class="ml-vs">vs</span>
-                  <span class="ml-team">{{ court.team2 }}</span>
-                </p>
-                <p class="ml-numbers">#{{ court.team1_numbers }} vs #{{ court.team2_numbers }}</p>
-              </div>
-            {% endfor %}
+          <div class="ml-week-detail" hidden>
+            <div class="ml-court-grid">
+              {% for court in week.courts %}
+                <div class="ml-court">
+                  <p class="ml-court-label">Court {{ court.court }}</p>
+                  <p class="ml-matchup">
+                    <span class="ml-team">{{ court.team1 }}</span>
+                    <span class="ml-vs">vs</span>
+                    <span class="ml-team">{{ court.team2 }}</span>
+                  </p>
+                  <p class="ml-numbers">#{{ court.team1_numbers }} vs #{{ court.team2_numbers }}</p>
+                </div>
+              {% endfor %}
+            </div>
+            <p class="ml-week-results-link">
+              <a href="#weekly-results" class="ml-open-week-results" data-week="{{ week.week }}">See {{ week.label }} results</a>
+            </p>
           </div>
         </article>
       {% endfor %}
@@ -137,20 +145,37 @@
 
     <section id="weekly-results" class="ml-section">
       <h2 class="ml-section-title">Weekly results</h2>
+      <p class="ml-section-sub">Click a week to see only that week’s scores (sorted by points, then wins).</p>
       {% if mens_weeks %}
+        <div class="ml-week-picker" role="tablist" aria-label="Select week results">
+          {% for week in mens_weeks %}
+            <button type="button"
+                    class="ml-week-pick {% if loop.first %}ml-week-pick-active{% endif %}"
+                    role="tab"
+                    aria-selected="{{ 'true' if loop.first else 'false' }}"
+                    data-week-panel="week-results-{{ loop.index0 }}">
+              {{ week.label }}
+            </button>
+          {% endfor %}
+        </div>
         {% for week in mens_weeks %}
-          <article class="ml-week-card">
-            <h3 class="ml-week-title">{{ week.label }}</h3>
+          <article id="week-results-{{ loop.index0 }}"
+                   class="ml-week-card ml-week-results-panel"
+                   data-week="{{ week.week_number or '' }}"
+                   {% if not loop.first %}hidden{% endif %}
+                   role="tabpanel">
+            <h3 class="ml-week-title">{{ week.label }} results</h3>
             <table class="ml-table">
               <thead>
-                <tr><th>#</th><th>Player</th><th>Pts</th><th>W</th><th>L</th></tr>
+                <tr><th>Place</th><th>#</th><th>Player</th><th>Pts</th><th>W</th><th>L</th></tr>
               </thead>
               <tbody>
                 {% for row in week.players %}
                   <tr>
+                    <td>{{ row.position }}</td>
                     <td>{{ row.number }}</td>
                     <td>{{ row.name }}</td>
-                    <td>{{ row.points_scored }}</td>
+                    <td><strong>{{ row.points_scored }}</strong></td>
                     <td>{{ row.wins }}</td>
                     <td>{{ row.losses }}</td>
                   </tr>
@@ -280,8 +305,49 @@
       padding: 1rem 1.1rem;
       margin-bottom: 0.85rem;
     }
+    .ml-week-card--clickable { cursor: pointer; transition: border-color 0.15s; }
+    .ml-week-card--clickable:hover,
+    .ml-week-card--open { border-color: var(--accent); }
+    .ml-week-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .ml-week-card-header .ml-week-title { margin: 0; }
+    .ml-week-chevron {
+      color: var(--muted);
+      font-size: 0.75rem;
+      transition: transform 0.15s;
+    }
+    .ml-week-card--open .ml-week-chevron { transform: rotate(180deg); color: var(--accent); }
     .ml-week-title { margin: 0 0 0.35rem; font-size: 1.05rem; color: var(--text); }
-    .ml-week-note { margin: 0 0 0.75rem; font-size: 0.85rem; color: var(--muted); font-style: italic; }
+    .ml-week-note { margin: 0.5rem 0 0.75rem; font-size: 0.85rem; color: var(--muted); font-style: italic; }
+    .ml-week-detail { margin-top: 0.85rem; }
+    .ml-week-results-link { margin: 0.85rem 0 0; font-size: 0.9rem; }
+    .ml-week-picker {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .ml-week-pick {
+      margin-top: 0;
+      padding: 0.4rem 0.85rem;
+      background: var(--surface);
+      color: var(--text);
+      border: 2px solid var(--court-line);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .ml-week-pick:hover { border-color: var(--accent); opacity: 1; }
+    .ml-week-pick-active {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--court-line);
+    }
     .ml-court-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
@@ -314,4 +380,62 @@
       .ml-court-grid { grid-template-columns: 1fr; }
     }
   </style>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('.ml-week-card--clickable').forEach(function(card) {
+        function toggle() {
+          var detail = card.querySelector('.ml-week-detail');
+          if (!detail) return;
+          var open = detail.hidden;
+          detail.hidden = !open;
+          card.classList.toggle('ml-week-card--open', open);
+          card.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+        card.addEventListener('click', function(e) {
+          if (e.target.closest('a')) return;
+          toggle();
+        });
+        card.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggle();
+          }
+        });
+      });
+
+      function showWeekResults(panelId) {
+        var picks = document.querySelectorAll('.ml-week-pick');
+        var panels = document.querySelectorAll('.ml-week-results-panel');
+        panels.forEach(function(panel) {
+          panel.hidden = panel.id !== panelId;
+        });
+        picks.forEach(function(btn) {
+          var active = btn.getAttribute('data-week-panel') === panelId;
+          btn.classList.toggle('ml-week-pick-active', active);
+          btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        var activePanel = document.getElementById(panelId);
+        if (activePanel) {
+          activePanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+
+      document.querySelectorAll('.ml-week-pick').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          showWeekResults(btn.getAttribute('data-week-panel'));
+        });
+      });
+
+      document.querySelectorAll('.ml-open-week-results').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+          var weekNum = link.getAttribute('data-week');
+          var panel = document.querySelector('.ml-week-results-panel[data-week="' + weekNum + '"]');
+          if (!panel) return;
+          e.preventDefault();
+          showWeekResults(panel.id);
+          document.getElementById('weekly-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
+    });
+  </script>
 {% endblock %}

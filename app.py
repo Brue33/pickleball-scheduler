@@ -2174,6 +2174,15 @@ def mens_league_players_ordered():
     return [(n, MENS_LEAGUE_ROSTER[n]) for n in sorted(MENS_LEAGUE_ROSTER)]
 
 
+def _mens_league_week_number_from_label(label):
+    """Pull week number from labels like 'Week 1'."""
+    text = (label or "").strip().lower()
+    for part in text.replace("-", " ").split():
+        if part.isdigit():
+            return int(part)
+    return None
+
+
 def mens_league_week_results_display(weeks):
     """Attach ordered player rows to each saved week for the template."""
     display = []
@@ -2189,9 +2198,18 @@ def mens_league_week_results_display(weeks):
                 "wins": int(entry.get("wins", 0) or 0),
                 "losses": int(entry.get("losses", 0) or 0),
             })
+        # Sort week standings by points then wins (same as season board)
+        ranked = sorted(
+            rows,
+            key=lambda r: (-r["points_scored"], -r["wins"], r["losses"], r["name"].lower()),
+        )
+        for i, row in enumerate(ranked):
+            row["position"] = i + 1
+        label = week.get("label") or "Week"
         display.append({
-            "label": week.get("label") or "Week",
-            "players": rows,
+            "label": label,
+            "week_number": _mens_league_week_number_from_label(label),
+            "players": ranked,
         })
     return display
 
